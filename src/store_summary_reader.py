@@ -115,16 +115,18 @@ def get_store_summary(gc, store: dict, year: int, month: int) -> dict:
         except Exception as e:
             print(f"    ⚠️ LTV取得失敗: {e}")
 
-    # 2. 解約報告 → 当月解約数(最終支払い日が当月内)
+    # 2. 解約報告 → 当月解約数(最終支払い日が前月の人)
+    # 例: 4月の解約数 = 最終支払い日が3月の人
     kaiyaku = find_sheet(sh, ["解約報告"])
     if kaiyaku:
         try:
+            prev_year, prev_month = (year, month - 1) if month > 1 else (year - 1, 12)
             v = kaiyaku.get_all_values()
             cnt = 0
             for row in v[1:]:
                 if len(row) < 4 or not row[3]: continue
                 d = parse_ymd(row[3])
-                if d and d.year == year and d.month == month:
+                if d and d.year == prev_year and d.month == prev_month:
                     cnt += 1
             result["cancels"] = cnt
         except Exception as e:
