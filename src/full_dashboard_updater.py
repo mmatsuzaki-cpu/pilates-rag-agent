@@ -240,31 +240,34 @@ def update_reviews(sh):
     all_v = ws.get_all_values()
     header = all_v[0]
 
-    # 現在月のラベル
+    # 現在月のラベル(年プレフィックス必須=過去年「5月」誤マッチ防止)
     now = datetime.now()
     year, month = now.year, now.month
-    if year == 2025:
-        target_label = f"{month}月" if month != 1 else "2025年1月"
-    elif year == 2026:
-        target_label = f"{month}月" if month != 1 else "2026年1月"
-    else:
-        target_label = f"{year}年{month}月"
+    target_label = f"{year}年{month}月"
 
-    # 列を探す(完全一致 or 数字のみ)
+    # 列を探す(完全一致のみ・最初に見つかったもの)
     col_idx = None
     for i, h in enumerate(header):
-        if h == target_label or h == f"{month}月":
-            col_idx = i + 1; continue
+        if h == target_label:
+            col_idx = i + 1; break
     if not col_idx:
-        # 「前月比」の前に列追加
+        # 「前月比」の前に列追加(罫線・幅は左列継承)
         zenmonth_idx = None
         for i, h in enumerate(header):
             if h == "前月比":
                 zenmonth_idx = i; break
-        if zenmonth_idx:
-            ws.insert_cols([[target_label]], col=zenmonth_idx + 1)
-            col_idx = zenmonth_idx + 1
-            print(f"  ➕ 口コミ '{target_label}'列 新規追加(列{col_idx})")
+        if zenmonth_idx is not None:
+            sheet_id = ws.id
+            sh.batch_update({"requests": [{
+                "insertDimension": {
+                    "range": {"sheetId": sheet_id, "dimension": "COLUMNS",
+                              "startIndex": zenmonth_idx, "endIndex": zenmonth_idx + 1},
+                    "inheritFromBefore": True
+                }
+            }]})
+            col_idx = zenmonth_idx + 1  # 1-indexed
+            ws.update_cell(1, col_idx, target_label)
+            print(f"  ➕ 口コミ '{target_label}'列 新規追加(列{col_idx}, 前月比の左)")
         else:
             print(f"  ⚠️ 口コミ '{target_label}'列を追加できない")
             return
