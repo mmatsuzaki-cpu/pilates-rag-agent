@@ -102,9 +102,41 @@ def update_contract_rate(sh, summary: dict):
         if row and row[0] == target_label:
             row_idx = i; break
     if not row_idx:
-        ws.append_row([target_label] + [""] * 15, value_input_option="USER_ENTERED")
-        row_idx = len(ws.get_all_values())
-        print(f"  ➕ 契約率 {target_label}行 新規追加")
+        # 月行は「平均」行の上に挿入(平均は1行下にずれる)
+        # 平均行が無ければ末尾に追加
+        avg_row = None
+        for i, row in enumerate(all_v[2:], start=3):
+            if row and row[0].strip() == "平均":
+                avg_row = i; break
+        sheet_id = ws.id
+        if avg_row:
+            # A列をTEXTフォーマットにしてラベルを文字列として保持
+            sh.batch_update({"requests": [{
+                "repeatCell": {
+                    "range": {"sheetId": sheet_id, "startRowIndex": avg_row - 1, "endRowIndex": avg_row,
+                              "startColumnIndex": 0, "endColumnIndex": 1},
+                    "cell": {"userEnteredFormat": {"numberFormat": {"type": "TEXT"}}},
+                    "fields": "userEnteredFormat.numberFormat"
+                }
+            }]})
+            ws.insert_row([target_label] + [""] * 15, avg_row, value_input_option="RAW")
+            row_idx = avg_row
+            # 直前の月行(avg_row - 1 が新規行になったので、その上= avg_row - 1 - 1)からフォーマットコピー
+            src = avg_row - 2  # 0-indexed の直前月行
+            sh.batch_update({"requests": [{
+                "copyPaste": {
+                    "source": {"sheetId": sheet_id, "startRowIndex": src, "endRowIndex": src + 1,
+                               "startColumnIndex": 0, "endColumnIndex": 16},
+                    "destination": {"sheetId": sheet_id, "startRowIndex": row_idx - 1, "endRowIndex": row_idx,
+                                    "startColumnIndex": 0, "endColumnIndex": 16},
+                    "pasteType": "PASTE_FORMAT"
+                }
+            }]})
+            print(f"  ➕ 契約率 {target_label}行 新規挿入(平均行の上, 罫線継承)")
+        else:
+            ws.append_row([target_label] + [""] * 15, value_input_option="USER_ENTERED")
+            row_idx = len(ws.get_all_values())
+            print(f"  ➕ 契約率 {target_label}行 末尾追加")
 
     col_map = {"S001": 2, "S002": 5, "S004": 8, "S003": 11, "S005": 14}
     for sid, base_col in col_map.items():
@@ -130,9 +162,21 @@ def update_cancel_rate(sh, summary: dict):
         if row and row[0] == target_label:
             row_idx = i; break
     if not row_idx:
+        # 末尾追加 + 直前行(前月)のフォーマットをコピー(罫線継承)
+        prev_row_idx = len(all_v)  # ヘッダ込みの最終行(=直前月行)
         ws.append_row([target_label] + [""] * 20, value_input_option="USER_ENTERED")
         row_idx = len(ws.get_all_values())
-        print(f"  ➕ 解約率 {target_label}行 新規追加")
+        sheet_id = ws.id
+        sh.batch_update({"requests": [{
+            "copyPaste": {
+                "source": {"sheetId": sheet_id, "startRowIndex": prev_row_idx - 1, "endRowIndex": prev_row_idx,
+                           "startColumnIndex": 0, "endColumnIndex": 21},
+                "destination": {"sheetId": sheet_id, "startRowIndex": row_idx - 1, "endRowIndex": row_idx,
+                                "startColumnIndex": 0, "endColumnIndex": 21},
+                "pasteType": "PASTE_FORMAT"
+            }
+        }]})
+        print(f"  ➕ 解約率 {target_label}行 新規追加(罫線継承)")
 
     # 入会:B-F / 解約:G-K / 会員:L-P / 解約率:Q-U
     # 順序: 川越/大宮/神戸元町/高崎/西宮北口
