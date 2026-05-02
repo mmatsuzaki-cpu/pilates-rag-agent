@@ -45,6 +45,11 @@ CATCHUP_LOG="$LOG_DIR/startup_catchup.log"
         echo "[$(date '+%H:%M:%S')] ✓ backup OK"
     fi
 
+    # qa_bot は5分ごとなのでcronで通常走るが、起動直後に1回走らせて
+    # スリープ中に投稿された振り返りに即時反応させる
+    echo "[$(date '+%H:%M:%S')] 🤖 qa_bot 起動時実行(振り返り即時キャッチ)"
+    bash "$PROJECT/scripts/run_qa_bot.sh"
+
     echo "[$(date '+%H:%M:%S')] catch-up 完了"
     echo ""
 } >> "$CATCHUP_LOG" 2>&1
