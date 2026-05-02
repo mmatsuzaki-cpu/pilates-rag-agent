@@ -95,11 +95,11 @@ def update_contract_rate(sh, summary: dict):
     if not summary: return
     sample = next(iter(summary.values()))
     target_label = f"{sample['year']}年{sample['month']}月"
-    short_label = f"{sample['month']}月"
 
+    # 完全一致のみ("5月"のような短縮ラベルにはマッチさせない=過去年破壊防止)
     row_idx = None
     for i, row in enumerate(all_v[2:], start=3):
-        if row and (row[0] == target_label or row[0] == short_label):
+        if row and row[0] == target_label:
             row_idx = i; break
     if not row_idx:
         ws.append_row([target_label] + [""] * 15, value_input_option="USER_ENTERED")
@@ -272,13 +272,9 @@ def main():
         update_sales(sh, jisseki)
 
     if do_daily:
-        # 月の前半は前月末確定値、後半は当月途中値
+        # 常に当月のデータを取得(月が変わったら新規行/列を自動追加)
         now = datetime.now()
-        if now.day <= 15:
-            target_year = now.year if now.month > 1 else now.year - 1
-            target_month = now.month - 1 if now.month > 1 else 12
-        else:
-            target_year, target_month = now.year, now.month
+        target_year, target_month = now.year, now.month
         print(f"\n📥 集計表からデータ取得 ({target_year}年{target_month}月)")
         summary = get_all_stores_summary(target_year, target_month)
         if not summary:
@@ -289,6 +285,19 @@ def main():
         update_cancel_rate(sh, summary)
         print("\n⭐ 口コミ更新")
         update_reviews(sh)
+
+        # 月初(1-3日)は念のため前月の確定値も再更新(集計表が後から更新される可能性)
+        # API quota切れになっても全体は落とさない(翌日の実行でリカバーされる)
+        if now.day <= 3:
+            prev_year, prev_month = (target_year, target_month - 1) if target_month > 1 else (target_year - 1, 12)
+            print(f"\n📥 月初なので前月({prev_year}年{prev_month}月)の確定値も再更新")
+            try:
+                prev_summary = get_all_stores_summary(prev_year, prev_month)
+                if prev_summary:
+                    update_contract_rate(sh, prev_summary)
+                    update_cancel_rate(sh, prev_summary)
+            except Exception as e:
+                print(f"⚠️ 前月再更新スキップ ({e})")
 
     print("\n🎉 完了!")
     return 0
