@@ -206,43 +206,31 @@ def build_mention_reply(keywords, hits):
 
 
 def build_auto_reply(keywords, hits):
+    """振り返り検知時の自動返信
+    方針: キーワード抽出 + 関連ノウハウへのリンク案内のみ
+    (改善策の具体提示は廃止 → Notionのノウハウ集で確認してもらう)
+    """
     lines = []
     lines.append("📝 *振り返りお疲れさまです!*")
-    lines.append("")
-    lines.append("このお客様の状況に関連しそうなノウハウを先回り共有しますね💡")
     lines.append("")
     lines.append(f"🔎 *検出キーワード*")
     lines.append(f"　{', '.join(keywords[:5])}")
     lines.append("")
-    lines.append("")
     if hits:
+        lines.append("📚 *関連ノウハウ*")
+        lines.append("")
         for i, p in enumerate(hits, 1):
             title = page_title(p)
             url = p.get("url", "")
-            lines.append("━━━━━━━━━━━━━━")
-            lines.append(f"*📚 {i}. {title}*")
-            lines.append("━━━━━━━━━━━━━━")
-            lines.append("")
-            try:
-                summary = extract_summary(p["id"], 2)
-                if summary["situation"]:
-                    lines.append("📌 *状況*")
-                    lines.append(f"　_{summary['situation'][:140]}_")
-                    lines.append("")
-                if summary["approaches"]:
-                    lines.append("💡 *推奨アプローチ*")
-                    lines.append("")
-                    for a in summary["approaches"]:
-                        lines.append(f"　▸ {a[:140]}")
-                        lines.append("")
-            except Exception:
-                pass
-            lines.append(f"<{url}|→ Notionで詳細を見る>")
-            lines.append("")
-            lines.append("")
+            lines.append(f"　{i}. <{url}|{title}>")
+        lines.append("")
+        lines.append("詳しい改善策やトーク例は、Notionのノウハウ集をご確認ください💡")
+    else:
+        lines.append("該当するノウハウは見つかりませんでした。")
+        lines.append("Notionのノウハウ集を直接ご確認ください📚")
+    lines.append("")
     lines.append("━━━━━━━━━━━━━━")
-    lines.append("💬 さらに詳しく聞きたい時は")
-    lines.append("　`@ピラティス振り返りBot` でメンションして質問してね!")
+    lines.append("💬 個別に聞きたい時は `@ピラティス振り返りBot` でメンションしてね!")
     return "\n".join(lines)
 
 
@@ -307,21 +295,21 @@ def main():
             print(f"  ✅ 質問返信: {kw}")
         time.sleep(1)
 
-    # 振り返り処理
+    # 振り返り処理(hits無しでもキーワードのみで返信→ノウハウ集案内)
     for r in reflections:
         text = r.get("text", "")
         ts = r.get("ts", "")
         kw = extract_concerns(text)
         if not kw:
             replied.add(ts); continue
-        hits = search(knowledge_db, kw, 2)
-        if not hits:
-            replied.add(ts); continue
+        hits = search(knowledge_db, kw, 3)
         reply = build_auto_reply(kw, hits)
         res = slack_post_message(channel, reply, thread_ts=ts)
         if res.get("ok"):
             replied.add(ts); success += 1
-            print(f"  ✅ 振り返り検知: {kw}")
+            print(f"  ✅ 振り返り検知: {kw} (hits={len(hits)})")
+        else:
+            print(f"  ❌ 投稿失敗: ts={ts} {res.get('error')}")
         time.sleep(1)
 
     state["replied_ts"] = list(replied)
