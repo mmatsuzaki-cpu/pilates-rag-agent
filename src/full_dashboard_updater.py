@@ -26,6 +26,7 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).parent))
 from common import get_gspread_client, get_jisseki_data, PROJECT_ROOT
+from store_summary_reader import get_all_stores_summary
 
 DASHBOARD_SSID = "1K0_PP4mGQBHzzKYOo2E8bulcwSJJVShS8JK875bdoZA"  # ピラティス実績全部
 TAX_RATE = 1.10  # 税込→税抜 で /1.1
@@ -87,92 +88,64 @@ def update_sales(sh, jisseki: dict):
 # ============================================
 # 契約率更新
 # ============================================
-def update_contract_rate(sh, jisseki: dict):
-    """契約率シート 月行を更新
-    列構造:
-      A: 月ラベル
-      B-D: 川越(新規/入会/契約率)
-      E-G: 大宮  H-J: 神戸元町  K-M: 高崎  N-P: 西宮北口
-    """
+def update_contract_rate(sh, summary: dict):
+    """契約率シート 月行を更新(集計表ソース)"""
     ws = sh.worksheet("契約率")
     all_v = ws.get_all_values()
-    if not jisseki: return
-    sample = next(iter(jisseki.values()))
-    ym = sample["year_month"]
-    year, month = ym.split("-")
-    target_label = f"{int(year)}年{int(month)}月"
-    short_label = f"{int(month)}月"  # 5月など
+    if not summary: return
+    sample = next(iter(summary.values()))
+    target_label = f"{sample['year']}年{sample['month']}月"
+    short_label = f"{sample['month']}月"
 
-    # 該当行(年月一致 or 短縮表記)
     row_idx = None
-    for i, row in enumerate(all_v[2:], start=3):  # ヘッダ2行目以降
+    for i, row in enumerate(all_v[2:], start=3):
         if row and (row[0] == target_label or row[0] == short_label):
             row_idx = i; break
     if not row_idx:
-        # 新規行追加
         ws.append_row([target_label] + [""] * 15, value_input_option="USER_ENTERED")
-        all_v = ws.get_all_values()
-        row_idx = len(all_v)
+        row_idx = len(ws.get_all_values())
         print(f"  ➕ 契約率 {target_label}行 新規追加")
 
-    # 列マッピング: 川越=B(2),C(3),D(4) / 大宮=E,F,G / 神戸=H,I,J / 高崎=K,L,M / 西宮=N,O,P
     col_map = {"S001": 2, "S002": 5, "S004": 8, "S003": 11, "S005": 14}
     for sid, base_col in col_map.items():
-        if sid not in jisseki: continue
-        d = jisseki[sid]
+        if sid not in summary: continue
+        d = summary[sid]
         ws.update_cell(row_idx, base_col, d["newcomers"])
-        ws.update_cell(row_idx, base_col + 1, d["contracts"])  # 入会数=契約数
+        ws.update_cell(row_idx, base_col + 1, d["contracts"])
         rate = d["contract_rate"] * 100 if d["contract_rate"] else 0
         ws.update_cell(row_idx, base_col + 2, f"{rate:.0f}%")
-    print(f"  ✅ 契約率 {target_label}行 更新完了")
+    print(f"  ✅ 契約率 {target_label}行 更新完了(集計表ベース)")
 
 
-# ============================================
-# 解約率更新
-# ============================================
-def update_cancel_rate(sh, jisseki: dict):
-    """解約率シート 月行を更新
-    列構造:
-      A: 月ラベル
-      B-F: 入会数(5店舗)
-      G-K: 解約数(5店舗)
-      L-P: 月末時点会員数(5店舗)
-      Q-U: 解約率(5店舗)
-    """
+def update_cancel_rate(sh, summary: dict):
+    """解約率シート 月行を更新(集計表ソース)"""
     ws = sh.worksheet("解約率")
     all_v = ws.get_all_values()
-    if not jisseki: return
-    sample = next(iter(jisseki.values()))
-    ym = sample["year_month"]
-    year, month = ym.split("-")
-    target_label = f"{year}年{int(month)}月"  # 解約率シートは "2025年4月" 形式
+    if not summary: return
+    sample = next(iter(summary.values()))
+    target_label = f"{sample['year']}年{sample['month']}月"
 
-    # 該当行
     row_idx = None
     for i, row in enumerate(all_v[2:], start=3):
         if row and row[0] == target_label:
             row_idx = i; break
     if not row_idx:
         ws.append_row([target_label] + [""] * 20, value_input_option="USER_ENTERED")
-        all_v = ws.get_all_values()
-        row_idx = len(all_v)
+        row_idx = len(ws.get_all_values())
         print(f"  ➕ 解約率 {target_label}行 新規追加")
 
-    # 列マッピング
-    # 入会数: B=2(川越), C=3(大宮), D=4(神戸元町), E=5(高崎), F=6(西北)
-    # 解約数: G=7, H=8, I=9, J=10, K=11
-    # 会員数: L=12, M=13, N=14, O=15, P=16
-    # 解約率: Q=17, R=18, S=19, T=20, U=21
-    store_col_idx = {"S001": 0, "S002": 1, "S004": 2, "S003": 3, "S005": 4}
-    for sid, idx in store_col_idx.items():
-        if sid not in jisseki: continue
-        d = jisseki[sid]
-        ws.update_cell(row_idx, 2 + idx, d["contracts"])      # 入会数
-        ws.update_cell(row_idx, 7 + idx, d["cancels"])        # 解約数
-        ws.update_cell(row_idx, 12 + idx, d["members"])       # 月末時点会員数
+    # 入会:B-F / 解約:G-K / 会員:L-P / 解約率:Q-U
+    # 順序: 川越/大宮/神戸元町/高崎/西宮北口
+    order = [("S001", 0), ("S002", 1), ("S004", 2), ("S003", 3), ("S005", 4)]
+    for sid, idx in order:
+        if sid not in summary: continue
+        d = summary[sid]
+        ws.update_cell(row_idx, 2 + idx, d["contracts"])
+        ws.update_cell(row_idx, 7 + idx, d["cancels"])
+        ws.update_cell(row_idx, 12 + idx, d["members"])
         rate = (d["cancels"] / d["members"] * 100) if d["members"] else 0
-        ws.update_cell(row_idx, 17 + idx, f"{rate:.1f}%")     # 解約率
-    print(f"  ✅ 解約率 {target_label}行 更新完了")
+        ws.update_cell(row_idx, 17 + idx, f"{rate:.1f}%")
+    print(f"  ✅ 解約率 {target_label}行 更新完了(集計表ベース)")
 
 
 # ============================================
@@ -289,22 +262,31 @@ def main():
     gc = get_gspread_client()
     sh = gc.open_by_key(DASHBOARD_SSID)
 
-    # ⑦月次店舗実績から最新月データ取得
-    print("\n📥 元データ取得(⑦月次店舗実績)")
-    jisseki = get_jisseki_data()
-    if not jisseki:
-        print("❌ データ取得失敗"); return 1
-    print(f"  対象店舗: {len(jisseki)}")
-
+    # 売上は⑦月次店舗実績から、契約率/解約率は集計表(各店舗スプシ)から
     if do_sales:
+        print("\n📥 売上元データ取得(⑦月次店舗実績)")
+        jisseki = get_jisseki_data()
+        if not jisseki:
+            print("❌ データ取得失敗"); return 1
         print("\n💰 売上更新")
         update_sales(sh, jisseki)
 
     if do_daily:
+        # 月の前半は前月末確定値、後半は当月途中値
+        now = datetime.now()
+        if now.day <= 15:
+            target_year = now.year if now.month > 1 else now.year - 1
+            target_month = now.month - 1 if now.month > 1 else 12
+        else:
+            target_year, target_month = now.year, now.month
+        print(f"\n📥 集計表からデータ取得 ({target_year}年{target_month}月)")
+        summary = get_all_stores_summary(target_year, target_month)
+        if not summary:
+            print("❌ 集計表取得失敗"); return 1
         print("\n📈 契約率更新")
-        update_contract_rate(sh, jisseki)
+        update_contract_rate(sh, summary)
         print("\n📉 解約率更新")
-        update_cancel_rate(sh, jisseki)
+        update_cancel_rate(sh, summary)
         print("\n⭐ 口コミ更新")
         update_reviews(sh)
 
