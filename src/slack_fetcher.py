@@ -222,11 +222,20 @@ def main():
 
     print(f"  📝 Notion追加対象: {len(new_results)}件")
     success = 0
+    failed_ts = set()
     for msg in new_results:
         if add_to_notion(msg):
             success += 1
+        else:
+            failed_ts.add(msg["ts"])
+            print(f"    ⚠️ Notion追加失敗: ts={msg['ts']} ({msg.get('datetime_str')})")
         time.sleep(0.3)
     print(f"  ✅ 追加: {success}/{len(new_results)}件")
+
+    # 失敗したtsはprocessed_tsから外す→次回再試行(冪等性確保)
+    if failed_ts:
+        processed_ts = processed_ts - failed_ts
+        print(f"  🔄 失敗{len(failed_ts)}件をprocessed_tsから除外(次回再試行)")
 
     save_state(state_path, {"processed_ts": list(processed_ts)})
     return 0
