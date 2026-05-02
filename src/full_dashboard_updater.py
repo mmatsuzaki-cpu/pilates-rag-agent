@@ -283,16 +283,20 @@ def update_reviews(sh):
         print(f"  📊 {info['name']:10s}: G={counts[sid]['google']} H={counts[sid]['hpb']}")
 
     # シートに反映
-    # Google: 行2-6 (川越/大宮/高崎/神戸元町/西宮北口)
-    # HPB: 行7-11
+    # Google: 行2-6 / HPB: 行7-11 / 合計(Google+HPB): 行12-16
     google_rows = {"S001": 2, "S002": 3, "S003": 4, "S004": 5, "S005": 6}
     hpb_rows = {"S001": 7, "S002": 8, "S003": 9, "S004": 10, "S005": 11}
+    total_rows = {"S001": 12, "S002": 13, "S003": 14, "S004": 15, "S005": 16}
     for sid in ["S001", "S002", "S003", "S004", "S005"]:
-        if counts[sid]["google"] is not None:
-            ws.update_cell(google_rows[sid], col_idx, counts[sid]["google"])
-        if counts[sid]["hpb"] is not None:
-            ws.update_cell(hpb_rows[sid], col_idx, counts[sid]["hpb"])
-    print(f"  ✅ 口コミ '{target_label}'列 更新完了")
+        g = counts[sid]["google"]
+        h = counts[sid]["hpb"]
+        if g is not None:
+            ws.update_cell(google_rows[sid], col_idx, g)
+        if h is not None:
+            ws.update_cell(hpb_rows[sid], col_idx, h)
+        if g is not None or h is not None:
+            ws.update_cell(total_rows[sid], col_idx, (g or 0) + (h or 0))
+    print(f"  ✅ 口コミ '{target_label}'列 更新完了(Google+HPB+合計)")
 
 
 # ============================================
