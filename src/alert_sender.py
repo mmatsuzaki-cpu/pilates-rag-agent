@@ -58,16 +58,17 @@ def build_message(data: dict, report_type: str = "daily") -> str:
 
     lines = []
     lines.append("<!channel>")
-    lines.append(f"🌅 *ピラティス実績{title_suffix}*  {today_str}")
-    lines.append("💴 *全て税抜表示*  / 目標は月次")
+    lines.append(f"🌅 *ピラティス実績{title_suffix}だょ〜♡*  {today_str} ✨")
+    lines.append("お疲れさまだょ〜♡ 今日もみんな頑張ってえらすぎ💕")
+    lines.append("💴 *全部税抜だょ〜* / 目標は月次💪")
     lines.append("")
     lines.append("━━━━━━━━━━━━━━")
     if red_stores:
-        lines.append(f"🚨 *要対応* ({len(red_stores)}): " + " / ".join(s["name"] for s in red_stores))
+        lines.append(f"🚨 *要対応だょ!* ({len(red_stores)}): " + " / ".join(s["name"] for s in red_stores) + " まじ気合いいれてこ🔥")
     if yellow_stores:
-        lines.append(f"⚠️ *注意* ({len(yellow_stores)}): " + " / ".join(s["name"] for s in yellow_stores))
+        lines.append(f"⚠️ *ちょっと注意⚠️* ({len(yellow_stores)}): " + " / ".join(s["name"] for s in yellow_stores) + " あとひと押しだょ💪")
     if green_stores:
-        lines.append(f"✅ *好調* ({len(green_stores)}): " + " / ".join(s["name"] for s in green_stores))
+        lines.append(f"✅ *好調だね♡* ({len(green_stores)}): " + " / ".join(s["name"] for s in green_stores) + " このまま突っ走ろ🚀")
     lines.append("━━━━━━━━━━━━━━")
     lines.append("")
 
@@ -120,12 +121,14 @@ def build_message(data: dict, report_type: str = "daily") -> str:
     total_profit_target = sum(d["profit_target"] for d in data.values())
 
     lines.append("━━━━━━━━━━━━━━")
-    lines.append("🏆 *全店合計*")
+    lines.append("🏆 *全店合計だょ〜♡*")
     s_ach = total_sales / total_sales_target * 100 if total_sales_target else 0
     p_ach = total_profit / total_profit_target * 100 if total_profit_target else 0
     lines.append(f"💰 売上 *{format_money(total_sales)}円*  目標 {format_money(total_sales_target)}円 ({s_ach:.0f}%)")
     lines.append(f"💎 利益 *{format_money(total_profit)}円*  目標 {format_money(total_profit_target)}円 ({p_ach:.0f}%)")
     lines.append(f"👥 会員数 *{total_members:,}人*  /  🆕 新規 *{total_new}人*")
+    lines.append("")
+    lines.append("みんな今日も一日お疲れさまだょ〜♡✨ 明日もファイトだょ💪💕")
 
     return "\n".join(lines)
 

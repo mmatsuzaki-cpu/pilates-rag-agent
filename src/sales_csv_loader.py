@@ -159,10 +159,14 @@ def main():
             print(f"  ⚠️ 読込失敗: {f.name}")
             continue
 
-        # 売上(税抜): 「役務売上」(レッスン売上)を採用
-        # ※ ★総売上 = 役務売上 + 店販売上 + 施術売上 等の総合
-        # ※ 役務売上 = レッスン提供分(税抜)
-        sales_net = parse_int(d.get("役務売上", 0))
+        # 売上(税抜): 「役務売上」(レッスン売上)から「売掛金」を引く
+        # ※ 役務売上 = レッスン提供分(税抜・発生主義)
+        # ※ 売掛金 = 当期計上分の支払い手段としての掛取引
+        #   → 引くことで「実入金ベースの売上」になる
+        # ※ 売掛金が負の値(過去回収) → 引くと売上が増える(回収分が乗る)
+        gross_sales = parse_int(d.get("役務売上", 0))
+        accounts_receivable = parse_int(d.get("売掛金", 0))
+        sales_net = gross_sales - accounts_receivable  # 売掛金分を控除
         newcomers = parse_int(d.get("新規", 0))
         customers = parse_int(d.get("客数", 0))
 
