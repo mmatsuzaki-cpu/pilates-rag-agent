@@ -3,11 +3,16 @@
 ピラティス実績速報をSlack #ピラティス_実績進捗 に送信。
 @channel メンション付き。
 
+【データソース = 各店舗の集計表のみ】(2026-05-04 全面リファクタ)
+- 売上・利益・口コミ表示は廃止(CSV取得は月2回 = 15日/月末のみ)
+- 表示項目: 契約率 / 会員数 / 新規数 / 紹介数 / 解約数 の5つに絞る
+- タイトル表示: 「{今月}月{日}日時点の実績」(毎朝の報告に合わせる)
+
 使い方:
-    python3 src/alert_sender.py            # 通常速報(最新月のデータ)
-    python3 src/alert_sender.py --report mid  # 月中報告(月中(1-15日))
-    python3 src/alert_sender.py --report end  # 月末報告(月末(1-月末))
-    python3 src/alert_sender.py --dry         # ドライラン
+    python3 src/alert_sender.py            # 通常速報
+    python3 src/alert_sender.py --report mid  # 月中報告(15日時点)
+    python3 src/alert_sender.py --report end  # 月末報告
+    python3 src/alert_sender.py --dry         # ドライラン(送信せず内容表示)
 """
 
 import sys
@@ -15,51 +20,29 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import (
-    STORES, get_jisseki_data, format_money,
-    status_emoji, contract_status,
-    slack_webhook_send,
-)
+from common import STORES, slack_webhook_send
+from store_summary_reader import get_all_stores_summary
 
 
-# 改善策セクションは廃止 (2026-05-03)
-# 改善策はNotionの状況別ノウハウ集(qa_botが返信)から確認する運用に
+def contract_status(rate: float) -> str:
+    """契約率の信号機判定 (50%以上🟢 / 30-50%🟡 / 30%未満🔴)"""
+    if rate >= 0.50: return "🟢"
+    if rate >= 0.30: return "🟡"
+    return "🔴"
 
 
-def overall_status(d: dict) -> str:
-    """信号機判定 (B案: 🔴2個以上→🔴, 1個か🟡あり→🟡, 全🟢→🟢)"""
-    sales_ach = d["sales"] / d["sales_target"] if d["sales_target"] else 0
-    profit_ach = d["profit"] / d["profit_target"] if d["profit_target"] else 0
-    statuses = [status_emoji(sales_ach), status_emoji(profit_ach), contract_status(d["contract_rate"])]
-    red = statuses.count("🔴")
-    yellow = statuses.count("🟡")
-    if red >= 2:
-        return "🔴"
-    if red == 1 or yellow >= 1:
-        return "🟡"
-    return "🟢"
+def build_message(data: dict, label: str) -> str:
+    """label: 「5月3日時点の実績」など、見出し用ラベル"""
 
-
-def build_message(data: dict, report_type: str = "daily") -> str:
-    today_str = datetime.now().strftime("%-m/%-d")
-
-    if report_type == "mid":
-        title_suffix = "中間報告 (1日-15日)"
-    elif report_type == "end":
-        title_suffix = "月末報告 (1日-月末)"
-    else:
-        title_suffix = "速報"
-
-    # ステータス判定
-    statuses = {sid: overall_status(data[sid]) for sid in data}
+    # 信号機判定(契約率ベース)
+    statuses = {sid: contract_status(d["contract_rate"]) for sid, d in data.items()}
     red_stores = [s for s in STORES if statuses.get(s["id"]) == "🔴"]
     yellow_stores = [s for s in STORES if statuses.get(s["id"]) == "🟡"]
     green_stores = [s for s in STORES if statuses.get(s["id"]) == "🟢"]
 
     lines = []
     lines.append("<!channel>")
-    lines.append(f"🌅 *ピラティス実績{title_suffix}*  {today_str}")
-    lines.append("💴 *全て税抜表示*  / 目標は月次")
+    lines.append(f"📊 *ピラティス実績 {label}*")
     lines.append("")
     lines.append("━━━━━━━━━━━━━━")
     if red_stores:
@@ -81,53 +64,54 @@ def build_message(data: dict, report_type: str = "daily") -> str:
             continue
         d = data[sid]
         st = statuses.get(sid, "⚪")
-        sales_ach = d["sales"] / d["sales_target"] if d["sales_target"] else 0
-        profit_ach = d["profit"] / d["profit_target"] if d["profit_target"] else 0
-        sales_st = status_emoji(sales_ach)
-        profit_st = status_emoji(profit_ach)
-        cr_st = contract_status(d["contract_rate"])
+        cr = d["contract_rate"] * 100
 
-        lines.append(f"{st} *{store['name']}* ({d['year_month']} {d['period']})  ─────────")
+        lines.append(f"{st} *{store['name']}*  ─────────")
         lines.append("")
-        lines.append("💰 *売上*")
-        lines.append(f"　 *{format_money(d['sales'])}円*  ⇨  目標 {format_money(d['sales_target'])}円  "
-                     f"({sales_ach*100:.0f}%{' '+sales_st if sales_st in ('🔴','🟡') else ''})")
-        lines.append("")
-        lines.append("💎 *利益*")
-        lines.append(f"　 *{format_money(d['profit'])}円*  ⇨  目標 {format_money(d['profit_target'])}円  "
-                     f"({profit_ach*100:.0f}%{' '+profit_st if profit_st in ('🔴','🟡') else ''})")
-        lines.append("")
-        lines.append("📈 *契約率*")
-        lines.append(f"　 *{d['contract_rate']*100:.0f}%{' '+cr_st if cr_st in ('🔴','🟡') else ''}* "
-                     f"({d['contracts']}/{d['newcomers']})  ⇨  目標 50%以上")
-        lines.append("")
+        lines.append(f"📈 *契約率*  {cr:.0f}%  ({d['contracts']}/{d['newcomers']})")
         lines.append(f"👥 *会員数*  {d['members']:,}人")
         lines.append(f"🆕 *新規数*  {d['newcomers']}人  /  🤝 *紹介数*  {d['referrals']}人")
         lines.append(f"🚪 *解約数*  {d['cancels']}人")
-        if d['google_review'] or d['hpb_review']:
-            total = d['google_review'] + d['hpb_review']
-            lines.append(f"⭐ *口コミ*  {total}件 (Google {d['google_review']} + HPB {d['hpb_review']})")
         lines.append("")
-
         lines.append("")
 
     # 全店合計
-    total_sales = sum(d["sales"] for d in data.values())
-    total_profit = sum(d["profit"] for d in data.values())
     total_members = sum(d["members"] for d in data.values())
     total_new = sum(d["newcomers"] for d in data.values())
-    total_sales_target = sum(d["sales_target"] for d in data.values())
-    total_profit_target = sum(d["profit_target"] for d in data.values())
+    total_contracts = sum(d["contracts"] for d in data.values())
+    total_referrals = sum(d["referrals"] for d in data.values())
+    total_cancels = sum(d["cancels"] for d in data.values())
+    total_cr = (total_contracts / total_new * 100) if total_new else 0
 
     lines.append("━━━━━━━━━━━━━━")
     lines.append("🏆 *全店合計*")
-    s_ach = total_sales / total_sales_target * 100 if total_sales_target else 0
-    p_ach = total_profit / total_profit_target * 100 if total_profit_target else 0
-    lines.append(f"💰 売上 *{format_money(total_sales)}円*  目標 {format_money(total_sales_target)}円 ({s_ach:.0f}%)")
-    lines.append(f"💎 利益 *{format_money(total_profit)}円*  目標 {format_money(total_profit_target)}円 ({p_ach:.0f}%)")
-    lines.append(f"👥 会員数 *{total_members:,}人*  /  🆕 新規 *{total_new}人*")
+    lines.append("")
+    lines.append(f"📈 *契約率*  {total_cr:.0f}%  ({total_contracts}/{total_new})")
+    lines.append(f"👥 *会員数*  {total_members:,}人")
+    lines.append(f"🆕 *新規数*  {total_new}人  /  🤝 *紹介数*  {total_referrals}人")
+    lines.append(f"🚪 *解約数*  {total_cancels}人")
 
     return "\n".join(lines)
+
+
+def make_label(report_type: str) -> str:
+    """見出しラベル生成
+    daily → 「5月3日時点の実績」(今日の月日)
+    mid   → 「5月15日時点の実績」(=その月の15日)
+    end   → 「5月末時点の実績」(=月末確定)
+    """
+    now = datetime.now()
+    if report_type == "mid":
+        return f"{now.month}月15日時点の実績"
+    elif report_type == "end":
+        # 月末は前月分の確定値を扱うことが多い(1日に走る想定)
+        # 当月1日に走るなら→前月末の数値を出す
+        if now.day == 1:
+            prev_year, prev_month = (now.year, now.month - 1) if now.month > 1 else (now.year - 1, 12)
+            return f"{prev_month}月末時点の実績"
+        return f"{now.month}月末時点の実績"
+    else:
+        return f"{now.month}月{now.day}日時点の実績"
 
 
 def main():
@@ -139,20 +123,25 @@ def main():
             if arg in ("mid", "中間"): report_type = "mid"
             elif arg in ("end", "月末"): report_type = "end"
 
-    period = None
-    if report_type == "mid":
-        period = "月中(1-15日)"
-    elif report_type == "end":
-        period = "月末(1-月末)"
+    # 取得対象月の決定
+    now = datetime.now()
+    if report_type == "end" and now.day == 1:
+        # 月初に走る月末レポート → 前月の値を取得
+        target_year, target_month = (now.year, now.month - 1) if now.month > 1 else (now.year - 1, 12)
+    else:
+        target_year, target_month = now.year, now.month
 
-    print(f"📊 {report_type}レポート生成中(period={period})...")
-    data = get_jisseki_data(period=period)
-    if not data:
-        print("❌ データ取得失敗")
+    print(f"📊 {report_type}レポート生成中 ({target_year}-{target_month:02d})...")
+
+    # 集計表から5項目取得
+    summary = get_all_stores_summary(target_year, target_month)
+    if not summary:
+        print("❌ 集計表取得失敗")
         return 1
-    print(f"  取得店舗: {len(data)}")
+    print(f"  ✅ 取得店舗: {len(summary)}")
 
-    msg = build_message(data, report_type=report_type)
+    label = make_label(report_type)
+    msg = build_message(summary, label)
 
     if "--dry" in sys.argv:
         print("\n" + "=" * 60)
