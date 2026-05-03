@@ -150,6 +150,10 @@ def get_store_summary(gc, store: dict, year: int, month: int) -> dict:
             print(f"    ⚠️ 紹介取得失敗: {e}")
 
     # 4. 契約者リスト → 現役会員数
+    # ルール(2026-05-04 松崎さん最終確定):
+    #   ・E列(コース)で判定する(A列もD列も空白がある場合があるため)
+    #   ・コース空欄の行はスキップ(=会員にカウントしない)
+    #   ・コースに INACTIVE_COURSE_KEYWORDS のいずれかを含む場合は除外
     contract_list = find_sheet(sh, ["契約者リスト"])
     if contract_list:
         try:
@@ -157,8 +161,10 @@ def get_store_summary(gc, store: dict, year: int, month: int) -> dict:
             cnt = 0
             for row in v[1:]:
                 if len(row) < 5: continue
-                course = row[4]  # E列=コース
+                course = (row[4] or "").strip()
+                # コース空欄はスキップ
                 if not course: continue
+                # 5キーワード(休会/解約/他店舗/他店舗移動/店舗移動)に該当 → 除外
                 if any(kw in course for kw in INACTIVE_COURSE_KEYWORDS): continue
                 cnt += 1
             result["members"] = cnt
