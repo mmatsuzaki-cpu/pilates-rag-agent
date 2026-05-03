@@ -31,8 +31,9 @@ STORE_SUMMARIES = [
      "name_in_referral": "西宮北口"},
 ]
 
-# 現役会員と判定するコース(整体なし系・年払い系含む)
-INACTIVE_COURSE_KEYWORDS = ["解約", "休会", "他店舗"]
+# 現役会員から除外するコースキーワード(松崎さん集計ルール準拠)
+# 「他店舗」「店舗移動」両表記をカバー(2026-05-04 神戸元町8人ズレ対策)
+INACTIVE_COURSE_KEYWORDS = ["解約", "休会", "他店舗", "店舗移動"]
 
 
 def reiwa_year(year: int) -> int:

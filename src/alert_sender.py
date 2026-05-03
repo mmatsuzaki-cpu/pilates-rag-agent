@@ -70,8 +70,9 @@ def build_message(data: dict, label: str) -> str:
         lines.append("")
         lines.append(f"📈 *契約率*  {cr:.0f}%  ({d['contracts']}/{d['newcomers']})")
         lines.append(f"👥 *会員数*  {d['members']:,}人")
-        lines.append(f"🆕 *新規数*  {d['newcomers']}人  /  🤝 *紹介数*  {d['referrals']}人")
+        lines.append(f"🆕 *新規数*  {d['newcomers']}人")
         lines.append(f"🚪 *解約数*  {d['cancels']}人")
+        lines.append(f"🤝 *紹介数*  {d['referrals']}人")
         lines.append("")
         lines.append("")
 
@@ -88,8 +89,9 @@ def build_message(data: dict, label: str) -> str:
     lines.append("")
     lines.append(f"📈 *契約率*  {total_cr:.0f}%  ({total_contracts}/{total_new})")
     lines.append(f"👥 *会員数*  {total_members:,}人")
-    lines.append(f"🆕 *新規数*  {total_new}人  /  🤝 *紹介数*  {total_referrals}人")
+    lines.append(f"🆕 *新規数*  {total_new}人")
     lines.append(f"🚪 *解約数*  {total_cancels}人")
+    lines.append(f"🤝 *紹介数*  {total_referrals}人")
 
     return "\n".join(lines)
 
