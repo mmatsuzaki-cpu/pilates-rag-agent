@@ -22,19 +22,8 @@ from common import (
 )
 
 
-# 改善策プール(本部マニュアル準拠の簡易版)
-IMPROVEMENT_SUGGESTIONS = {
-    "contract_rate": [
-        "🎯 *クロージング時の姿勢改善*\n　　 横並びNG → 片膝立ちで目線を下に(威圧感回避)",
-        "📝 *言葉遣い統一(マニュアル50項目)*\n　　 「いいですか?」→「よろしいでしょうか?」など",
-        "🎬 *Before↔Afterテスト(本部施策2025/5〜)*\n　　 変化を体感→成約率UP",
-    ],
-    "cancel_rate": [
-        "🚪 *お見送り徹底*\n　　 他のレッスン中でも手を止めて「少々お待ちください」→玄関まで",
-        "📵 *スタッフ間私語NG運用*\n　　 お客様前でタメ口・足組み・腕組み・お菓子全てNG",
-        "💝 *月会費の対価意識*\n　　 「品質の高いレッスンを提供する」をチームで毎日唱和",
-    ],
-}
+# 改善策セクションは廃止 (2026-05-03)
+# 改善策はNotionの状況別ノウハウ集(qa_botが返信)から確認する運用に
 
 
 def overall_status(d: dict) -> str:
@@ -120,17 +109,6 @@ def build_message(data: dict, report_type: str = "daily") -> str:
             lines.append(f"⭐ *口コミ*  {total}件 (Google {d['google_review']} + HPB {d['hpb_review']})")
         lines.append("")
 
-        # 改善策(🔴判定の項目のみ)
-        cr_st_only = contract_status(d["contract_rate"])
-        if st == "🔴" and cr_st_only == "🔴":
-            lines.append("━━━━━━━━━━━")
-            lines.append("💡 *改善策*")
-            lines.append("")
-            lines.append("【📈 契約率低迷】")
-            lines.append("")
-            for s in IMPROVEMENT_SUGGESTIONS["contract_rate"]:
-                lines.append(f"　▸ {s}")
-                lines.append("")
         lines.append("")
 
     # 全店合計
