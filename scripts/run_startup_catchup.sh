@@ -7,6 +7,7 @@
 PROJECT="/Users/user/projects/pilates-rag-agent"
 LOG_DIR="$PROJECT/output/logs"
 TODAY=$(date +%Y-%m-%d)
+YESTERDAY=$(date -v-1d +%Y-%m-%d)
 HOUR=$(date +%H)
 NOW=$(date '+%Y-%m-%d %H:%M:%S')
 
@@ -21,20 +22,33 @@ CATCHUP_LOG="$LOG_DIR/startup_catchup.log"
     # 起動直後はネットワーク等が落ち着くまで少し待つ
     sleep 30
 
+    # === 前日分の補完(昨夜Macがスリープしてた場合) ===
+    # 昨日の feedback / daily が走っていなければ、今送る(冪等性あり)
+    if [ ! -f "$LOG_DIR/feedback_${YESTERDAY}.log" ]; then
+        echo "[$(date '+%H:%M:%S')] ⏰ 昨日のfeedback未実行 → 補完"
+        bash "$PROJECT/scripts/run_feedback_sync.sh"
+        # 補完したら今日のログも作られる(同じスクリプト)→ 当日分は別チェック
+    fi
+    if [ ! -f "$LOG_DIR/daily_${YESTERDAY}.log" ]; then
+        echo "[$(date '+%H:%M:%S')] ⏰ 昨日のdaily未実行 → 補完(今送信)"
+        bash "$PROJECT/scripts/run_daily.sh"
+    fi
+
+    # === 当日分(時刻が来ていれば実行) ===
     # 10時を過ぎていて、今日のfeedbackログが無ければ実行
     if [ "$HOUR" -ge 10 ] && [ ! -f "$LOG_DIR/feedback_${TODAY}.log" ]; then
-        echo "[$(date '+%H:%M:%S')] ⏰ feedback未実行 → catch-up"
+        echo "[$(date '+%H:%M:%S')] ⏰ 当日feedback未実行 → catch-up"
         bash "$PROJECT/scripts/run_feedback_sync.sh"
     else
-        echo "[$(date '+%H:%M:%S')] ✓ feedback OK ($HOUR時)"
+        echo "[$(date '+%H:%M:%S')] ✓ 当日feedback OK ($HOUR時)"
     fi
 
     # 22時を過ぎていて、今日のdailyログが無ければ実行
     if [ "$HOUR" -ge 22 ] && [ ! -f "$LOG_DIR/daily_${TODAY}.log" ]; then
-        echo "[$(date '+%H:%M:%S')] ⏰ daily未実行 → catch-up"
+        echo "[$(date '+%H:%M:%S')] ⏰ 当日daily未実行 → catch-up"
         bash "$PROJECT/scripts/run_daily.sh"
     else
-        echo "[$(date '+%H:%M:%S')] ✓ daily OK ($HOUR時)"
+        echo "[$(date '+%H:%M:%S')] ✓ 当日daily OK ($HOUR時)"
     fi
 
     # 3時を過ぎていて、今日のbackupログが無ければ実行(任意)
