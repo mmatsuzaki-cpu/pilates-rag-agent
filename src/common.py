@@ -150,9 +150,22 @@ def get_jisseki_data(period: Optional[str] = None) -> dict:
                 if r[COL['期間']] == '月末(1-月末)' and r[COL['売上(税抜)']]:
                     latest = r; break
         else:
-            for r in store_rows:
-                if r[COL['期間']] == '月末(1-月末)' and r[COL['売上(税抜)']]:
-                    latest = r; break
+            # 最新月優先 → その月の (月末 → 月中) → なければ前月にフォールバック
+            if store_rows:
+                latest_ym = store_rows[0][COL['年月']]
+                same_month = [r for r in store_rows if r[COL['年月']] == latest_ym]
+                for r in same_month:
+                    if r[COL['期間']] == '月末(1-月末)' and r[COL['売上(税抜)']]:
+                        latest = r; break
+                if not latest:
+                    for r in same_month:
+                        if r[COL['期間']] == '月中(1-15日)' and r[COL['売上(税抜)']]:
+                            latest = r; break
+            # 最新月にデータが無ければ過去月にフォールバック
+            if not latest:
+                for r in store_rows:
+                    if r[COL['期間']] == '月末(1-月末)' and r[COL['売上(税抜)']]:
+                        latest = r; break
             if not latest:
                 for r in store_rows:
                     if r[COL['期間']] == '月中(1-15日)' and r[COL['売上(税抜)']]:

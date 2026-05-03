@@ -89,10 +89,11 @@ def read_csv(path):
     return dict(zip(header, row))
 
 
-def update_jisseki_sheet(sh, updates: dict, year_month: str, period: str):
+def update_jisseki_sheet(sh, updates: dict, year_month: str, period: str, summary: dict = None):
     """⑦月次店舗実績シートの (year_month, period, store_id) 行を作成・更新
 
-    updates: {store_id: {sales: int, customers: int, newcomers: int, ...}}
+    updates: {store_id: {sales_net, newcomers, customers, ...}} ← CSVから
+    summary: {store_id: {newcomers, contracts, contract_rate, cancels, referrals, members}} ← 集計表から(任意)
     """
     ws = sh.worksheet("⑦月次店舗実績")
     all_v = ws.get_all_values()
@@ -116,25 +117,54 @@ def update_jisseki_sheet(sh, updates: dict, year_month: str, period: str):
             "S004": "神戸元町店", "S005": "西宮北口店",
         }[store_id]
 
+        # 集計表データ(あれば使う)
+        s = (summary or {}).get(store_id, {})
+
+        # バッチ更新用: 1行分の値を組み立て
+        # 列順: 年月,期間,店舗ID,店舗名,売上(税抜),利益(税抜),会員数,契約率,契約数,新規数,解約数,紹介数,Google口コミ,HPB口コミ,口コミ合計
         if target_row_idx is None:
-            # 新規行を末尾に追加
             new_row = [""] * len(header)
             new_row[COL['年月']] = year_month
             new_row[COL['期間']] = period
             new_row[COL['店舗ID']] = store_id
             new_row[COL['店舗名']] = store_name_jp
             new_row[COL['売上(税抜)']] = d['sales_net']
-            if '新規数' in COL: new_row[COL['新規数']] = d.get('newcomers', '')
+            if s:
+                new_row[COL['会員数']] = s.get('members', '')
+                new_row[COL['契約率']] = s.get('contract_rate', '')
+                new_row[COL['契約数']] = s.get('contracts', '')
+                new_row[COL['新規数']] = s.get('newcomers', d.get('newcomers', ''))
+                new_row[COL['解約数']] = s.get('cancels', '')
+                new_row[COL['紹介数']] = s.get('referrals', '')
+            else:
+                new_row[COL['新規数']] = d.get('newcomers', '')
             ws.append_row(new_row, value_input_option="USER_ENTERED")
             n_changed += 1
-            print(f"  ➕ {year_month} {period} {store_name_jp}: 新規追加 売上(税抜)={d['sales_net']:,}")
+            extra = (f" 会員={s.get('members')} 契約率={s.get('contract_rate', 0)*100:.0f}%" if s else "")
+            print(f"  ➕ {year_month} {period} {store_name_jp}: 新規追加 売上={d['sales_net']:,}{extra}")
         else:
-            # 売上(税抜) + 新規数を更新(他列は保持)
-            ws.update_cell(target_row_idx, COL['売上(税抜)'] + 1, d['sales_net'])
-            if '新規数' in COL:
-                ws.update_cell(target_row_idx, COL['新規数'] + 1, d.get('newcomers', 0))
+            # 1行一括更新(範囲指定でAPI呼び出しを最小化 → quota節約)
+            row_values = list(all_v[target_row_idx - 1])  # 0-indexed
+            # 必要な長さに揃える
+            while len(row_values) < len(header):
+                row_values.append("")
+            row_values[COL['売上(税抜)']] = d['sales_net']
+            if s:
+                row_values[COL['会員数']] = s.get('members', 0)
+                row_values[COL['契約率']] = s.get('contract_rate', 0)
+                row_values[COL['契約数']] = s.get('contracts', 0)
+                row_values[COL['新規数']] = s.get('newcomers', 0)
+                row_values[COL['解約数']] = s.get('cancels', 0)
+                row_values[COL['紹介数']] = s.get('referrals', 0)
+            else:
+                row_values[COL['新規数']] = d.get('newcomers', 0)
+            # A列〜最終列まで一括更新
+            last_col_letter = chr(ord('A') + len(header) - 1)
+            range_name = f"A{target_row_idx}:{last_col_letter}{target_row_idx}"
+            ws.update(values=[row_values], range_name=range_name, value_input_option="USER_ENTERED")
             n_changed += 1
-            print(f"  ✏️  {year_month} {period} {store_name_jp}: 更新 売上(税抜)={d['sales_net']:,}")
+            extra = (f" 会員={s.get('members')} 契約率={s.get('contract_rate', 0)*100:.0f}% 解約={s.get('cancels')}" if s else "")
+            print(f"  ✏️  {year_month} {period} {store_name_jp}: 更新 売上={d['sales_net']:,}{extra}")
     return n_changed
 
 
@@ -183,11 +213,25 @@ def main():
         print("ℹ️ 更新対象なし")
         return 0
 
+    # 集計表から契約率/会員数/解約数/紹介数を取得(可能なら)
+    summary = None
+    try:
+        import time
+        from store_summary_reader import get_all_stores_summary
+        y, m = year_month.split("-")
+        print(f"\n📥 集計表から契約率・会員数・解約数を取得 ({year_month})")
+        summary = get_all_stores_summary(int(y), int(m))
+        # 集計表取得で大量read消費 → ⑦シート更新前にquotaリセット待ち
+        print("  ⏱️ Sheets API quota待ち 70秒...")
+        time.sleep(70)
+    except Exception as e:
+        print(f"  ⚠️ 集計表取得失敗 (売上のみ更新): {e}")
+
     # スプシ更新
     print(f"\n💾 ⑦月次店舗実績シート更新 (年月={year_month}, 期間={period})")
     gc = get_gspread_client()
     sh = gc.open_by_key(SPREADSHEET_ID)
-    n = update_jisseki_sheet(sh, updates, year_month, period)
+    n = update_jisseki_sheet(sh, updates, year_month, period, summary=summary)
     print(f"  ✅ {n}店舗 更新")
 
     # 処理済みCSVを移動
