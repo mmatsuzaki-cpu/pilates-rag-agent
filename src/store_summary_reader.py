@@ -11,11 +11,28 @@
 """
 
 import sys
+import time
 from datetime import datetime, date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from common import get_gspread_client
+
+
+def with_retry(fn, *args, retries=3, delay=65, **kwargs):
+    """Sheets API 呼び出しを 429リトライ付きで実行
+    - 429(quota exceeded)時は delay 秒待ってリトライ(最大 retries 回)
+    - その他の例外はそのまま re-raise
+    """
+    for attempt in range(retries):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            if "429" in str(e) and attempt < retries - 1:
+                print(f"    🔄 429 quota → {delay}秒待機してリトライ ({attempt+1}/{retries})")
+                time.sleep(delay)
+                continue
+            raise
 
 # 店舗マスタ + 集計表ID
 STORE_SUMMARIES = [
@@ -105,11 +122,11 @@ def get_store_summary(gc, store: dict, year: int, month: int) -> dict:
         "cancels": 0, "referrals": 0, "members": 0,
     }
 
-    # 1. LTVシート
+    # 1. LTVシート(429時は自動リトライ)
     ltv = find_sheet(sh, [ltv_sheet_name(year, month), f"R{reiwa_year(year)}.{month}月LTV "])
     if ltv:
         try:
-            vals = ltv.batch_get(["D4", "G4", "H4"])
+            vals = with_retry(ltv.batch_get, ["D4", "G4", "H4"])
             result["newcomers"] = safe_int(vals[0][0][0]) if vals[0] else 0
             result["contracts"] = safe_int(vals[1][0][0]) if vals[1] else 0
             result["contract_rate"] = safe_pct(vals[2][0][0]) if vals[2] else 0.0
@@ -117,12 +134,11 @@ def get_store_summary(gc, store: dict, year: int, month: int) -> dict:
             print(f"    ⚠️ LTV取得失敗: {e}")
 
     # 2. 解約報告 → 当月解約数(最終支払い日が前月の人)
-    # 例: 4月の解約数 = 最終支払い日が3月の人
     kaiyaku = find_sheet(sh, ["解約報告"])
     if kaiyaku:
         try:
             prev_year, prev_month = (year, month - 1) if month > 1 else (year - 1, 12)
-            v = kaiyaku.get_all_values()
+            v = with_retry(kaiyaku.get_all_values)
             cnt = 0
             for row in v[1:]:
                 if len(row) < 4 or not row[3]: continue
@@ -137,13 +153,13 @@ def get_store_summary(gc, store: dict, year: int, month: int) -> dict:
     shoukai = find_sheet(sh, ["紹介報告"])
     if shoukai:
         try:
-            v = shoukai.get_all_values()
+            v = with_retry(shoukai.get_all_values)
             cnt = 0
             for row in v[1:]:
                 if len(row) < 4 or not row[0]: continue
                 d = parse_ymd(row[0])  # 入会日
                 if d and d.year == year and d.month == month:
-                    if row[3] and store["name_in_referral"] in row[3]:  # 紹介元店舗(D列)
+                    if row[3] and store["name_in_referral"] in row[3]:
                         cnt += 1
             result["referrals"] = cnt
         except Exception as e:
@@ -151,20 +167,16 @@ def get_store_summary(gc, store: dict, year: int, month: int) -> dict:
 
     # 4. 契約者リスト → 現役会員数
     # ルール(2026-05-04 松崎さん最終確定):
-    #   ・E列(コース)で判定する(A列もD列も空白がある場合があるため)
-    #   ・コース空欄の行はスキップ(=会員にカウントしない)
-    #   ・コースに INACTIVE_COURSE_KEYWORDS のいずれかを含む場合は除外
+    #   ・E列(コース)で判定 / コース空欄スキップ / 5キーワード(休会/解約/他店舗/他店舗移動/店舗移動)除外
     contract_list = find_sheet(sh, ["契約者リスト"])
     if contract_list:
         try:
-            v = contract_list.get_all_values()
+            v = with_retry(contract_list.get_all_values)
             cnt = 0
             for row in v[1:]:
                 if len(row) < 5: continue
                 course = (row[4] or "").strip()
-                # コース空欄はスキップ
                 if not course: continue
-                # 5キーワード(休会/解約/他店舗/他店舗移動/店舗移動)に該当 → 除外
                 if any(kw in course for kw in INACTIVE_COURSE_KEYWORDS): continue
                 cnt += 1
             result["members"] = cnt
