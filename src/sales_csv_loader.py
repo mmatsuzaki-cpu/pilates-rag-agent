@@ -189,14 +189,14 @@ def main():
             print(f"  ⚠️ 読込失敗: {f.name}")
             continue
 
-        # 売上(税抜): 「役務売上」(レッスン売上)から「売掛金」を引く
-        # ※ 役務売上 = レッスン提供分(税抜・発生主義)
-        # ※ 売掛金 = 当期計上分の支払い手段としての掛取引
+        # 売上(税込): 「★支払合計」から「売掛金」を引く(2026-05-04 松崎さん確定)
+        # ※ ★支払合計 = 顧客から受け取った支払い手段の合計(現金/カード/サブスク/etc)
+        # ※ 売掛金 = 当期未入金分(後日入金される分)
         #   → 引くことで「実入金ベースの売上」になる
-        # ※ 売掛金が負の値(過去回収) → 引くと売上が増える(回収分が乗る)
-        gross_sales = parse_int(d.get("役務売上", 0))
+        # ※ CSVは税込ベースで、スプシ側の関数で自動的に税抜・利益が計算される
+        payments_total = parse_int(d.get("★支払い合計", 0))
         accounts_receivable = parse_int(d.get("売掛金", 0))
-        sales_net = gross_sales - accounts_receivable  # 売掛金分を控除
+        sales_net = payments_total - accounts_receivable  # 売掛金分を控除
         newcomers = parse_int(d.get("新規", 0))
         customers = parse_int(d.get("客数", 0))
 
