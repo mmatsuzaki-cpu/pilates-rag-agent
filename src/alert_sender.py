@@ -20,8 +20,49 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import STORES, slack_webhook_send
+from common import STORES, SPREADSHEET_ID, get_gspread_client, slack_webhook_send
 from store_summary_reader import get_all_stores_summary
+
+# 「ピラティス実績全部」スプシ(口コミシートあり)
+DASHBOARD_SSID = "1K0_PP4mGQBHzzKYOo2E8bulcwSJJVShS8JK875bdoZA"
+
+
+def safe_int(v):
+    try:
+        return int(str(v).replace(",", "").strip()) if v else 0
+    except (ValueError, TypeError):
+        return 0
+
+
+def get_reviews_from_kuchikomi(gc):
+    """「ピラティス実績全部」スプシの「口コミ」シートから最新月の口コミを取得
+    シート構造:
+      列: 月初時点 / '' / 目標 / 12月 / 2025年1月 / ... / 2026年X月 / 前月比
+      行2-6: Google × 5店舗(川越/大宮/高崎/神戸元町/西宮北口)
+      行7-11: HPB × 5店舗
+    最新月列 = 「前月比」の左の列
+    """
+    sh = gc.open_by_key(DASHBOARD_SSID)
+    ws = sh.worksheet("口コミ")
+    v = ws.get_all_values()
+    header = v[0]
+    # 「前月比」の左の列が最新月
+    try:
+        latest_col = header.index("前月比") - 1
+    except ValueError:
+        latest_col = len(header) - 1
+
+    google_rows = {"S001": 1, "S002": 2, "S003": 3, "S004": 4, "S005": 5}  # 0-indexed
+    hpb_rows    = {"S001": 6, "S002": 7, "S003": 8, "S004": 9, "S005": 10}
+
+    result = {}
+    for sid in ['S001', 'S002', 'S003', 'S004', 'S005']:
+        g_row = v[google_rows[sid]] if google_rows[sid] < len(v) else []
+        h_row = v[hpb_rows[sid]]    if hpb_rows[sid]    < len(v) else []
+        g = safe_int(g_row[latest_col]) if latest_col < len(g_row) else 0
+        h = safe_int(h_row[latest_col]) if latest_col < len(h_row) else 0
+        result[sid] = {'google': g, 'hpb': h}
+    return result
 
 
 def contract_status(rate: float) -> str:
@@ -66,13 +107,20 @@ def build_message(data: dict, label: str) -> str:
         st = statuses.get(sid, "⚪")
         cr = d["contract_rate"] * 100
 
+        # 解約率 = 解約数 ÷ 会員数
+        cancel_rate = (d['cancels'] / d['members'] * 100) if d['members'] else 0
+        # 口コミ
+        rv = d.get('reviews', {'google': 0, 'hpb': 0})
+
         lines.append(f"{st} *{store['name']}*  ─────────")
         lines.append("")
         lines.append(f"📈 *契約率*  {cr:.0f}%  ({d['contracts']}/{d['newcomers']})")
         lines.append(f"👥 *会員数*  {d['members']:,}人")
         lines.append(f"🆕 *新規数*  {d['newcomers']}人")
-        lines.append(f"🚪 *解約数*  {d['cancels']}人")
+        lines.append(f"🚪 *解約数*  {d['cancels']}人  (解約率 {cancel_rate:.1f}%)")
         lines.append(f"🤝 *紹介数*  {d['referrals']}人")
+        lines.append(f"⭐ *Google口コミ*  {rv['google']}件")
+        lines.append(f"📱 *HPB口コミ*  {rv['hpb']}件")
         lines.append("")
         lines.append("")
 
@@ -84,14 +132,20 @@ def build_message(data: dict, label: str) -> str:
     total_cancels = sum(d["cancels"] for d in data.values())
     total_cr = (total_contracts / total_new * 100) if total_new else 0
 
+    total_cancel_rate = (total_cancels / total_members * 100) if total_members else 0
+    total_google = sum(d.get('reviews', {}).get('google', 0) for d in data.values())
+    total_hpb = sum(d.get('reviews', {}).get('hpb', 0) for d in data.values())
+
     lines.append("━━━━━━━━━━━━━━")
     lines.append("🏆 *全店合計*")
     lines.append("")
     lines.append(f"📈 *契約率*  {total_cr:.0f}%  ({total_contracts}/{total_new})")
     lines.append(f"👥 *会員数*  {total_members:,}人")
     lines.append(f"🆕 *新規数*  {total_new}人")
-    lines.append(f"🚪 *解約数*  {total_cancels}人")
+    lines.append(f"🚪 *解約数*  {total_cancels}人  (解約率 {total_cancel_rate:.1f}%)")
     lines.append(f"🤝 *紹介数*  {total_referrals}人")
+    lines.append(f"⭐ *Google口コミ*  {total_google:,}件")
+    lines.append(f"📱 *HPB口コミ*  {total_hpb:,}件")
 
     return "\n".join(lines)
 
@@ -135,12 +189,25 @@ def main():
 
     print(f"📊 {report_type}レポート生成中 ({target_year}-{target_month:02d})...")
 
-    # 集計表から5項目取得
+    # 先に口コミシート(軽量・1 read)を取得 → quota確保
+    reviews = {}
+    try:
+        gc = get_gspread_client()
+        reviews = get_reviews_from_kuchikomi(gc)
+        print(f"  ✅ 口コミシート 取得完了")
+    except Exception as e:
+        print(f"  ⚠️ 口コミ取得失敗: {e}")
+
+    # 集計表から5項目取得(契約率/会員数/新規/解約/紹介)※多数 read 消費
     summary = get_all_stores_summary(target_year, target_month)
     if not summary:
         print("❌ 集計表取得失敗")
         return 1
     print(f"  ✅ 取得店舗: {len(summary)}")
+
+    # 口コミをマージ
+    for sid in summary:
+        summary[sid]['reviews'] = reviews.get(sid, {'google': 0, 'hpb': 0})
 
     label = make_label(report_type)
     msg = build_message(summary, label)
