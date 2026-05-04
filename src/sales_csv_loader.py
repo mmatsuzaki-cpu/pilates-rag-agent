@@ -1,18 +1,17 @@
 """sales_csv_loader.py
 
-~/Downloads/ に置かれた店舗別売上CSV(Shift-JIS)を検出 →
+~/Documents/pilates_sales/ に置かれた店舗別売上CSV(Shift-JIS)を検出 →
 ⑦月次店舗実績シートの「当月 / 月中(1-15日)」行を作成・更新 →
 処理後はalert_sender.pyを呼んでSlack #ピラティス_実績進捗 に速報送信。
 
-CSV ファイル名規則:
-- "MMDD{店舗名}.csv" (例: 0503川越.csv)
-- "{店舗名}.csv"     (例: 神戸元町.csv)
-店舗名: 川越/大宮/高崎/神戸元町/西宮北口
+【ファイル名は何でもOK】(2026-05-04)
+- 店舗判別はCSV2行目1列目「La pilates 〜」から行う
+- 例: acc-1777853917.csv / 0503川越.csv / etc.
 
 CSV内のデータは「月初〜CSV作成日まで」の累積値という前提。
-処理後はファイル名を {YYYY-MM}/{元名} に移動して重複処理防止。
+処理後はファイルを data/sales/processed/{YYYY-MM}/ に移動して重複処理防止。
 
-cron 5分間隔で実行 → CSV置けば最大5分以内に反映。
+cron 1時間間隔で実行 → CSV置けば最大1時間以内に反映。
 """
 
 import csv
@@ -26,11 +25,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from common import get_gspread_client, SPREADSHEET_ID
 
-DOWNLOADS = Path.home() / "Downloads"
+# 売上CSV投入フォルダ(2026-05-04 ~/Downloads/ から専用フォルダに移行)
+INBOX = Path.home() / "Documents" / "pilates_sales"
 PROJECT_ROOT = Path(__file__).parent.parent
 PROCESSED_DIR = PROJECT_ROOT / "data" / "sales" / "processed"
 
-# CSV 店舗名 → store_id
+# CSV 店舗名(部分一致用) → store_id
+# 例: CSV内「La pilates 川越」→「川越」マッチ → S001
 STORE_MAP = {
     "川越":     "S001",
     "大宮":     "S002",
@@ -39,34 +40,38 @@ STORE_MAP = {
     "西宮北口": "S005",
 }
 
-# CSV 店舗名一覧(ファイル名検出用)
 STORE_NAMES = list(STORE_MAP.keys())
 
 
+def detect_store_from_csv(path):
+    """CSV2行目の1列目「La pilates 〜」から店舗名(川越/大宮/高崎/神戸元町/西宮北口)を検出"""
+    try:
+        text = path.read_bytes().decode("cp932", errors="replace")
+        reader = list(csv.reader(text.splitlines()))
+        if len(reader) < 2: return None
+        store_name_jp = reader[1][0] if reader[1] else ""  # 例: "La pilates 川越"
+        for sname in STORE_NAMES:
+            if sname in store_name_jp:
+                return sname
+    except Exception:
+        return None
+    return None
+
+
 def detect_csv_files():
-    """~/Downloads/ から対象CSVを抽出
-    受付ルール:
-    - 「{店舗名}.csv」または「MMDD{店舗名}.csv」(MMDDは4桁ちょうど)のみ採用
-    - 「YYYYMM{店舗名}.csv」(6桁プレフィクス=過去年月)は **拒絶**
+    """INBOX フォルダ内の全CSVを走査 → CSV内容から店舗判別
+    - ファイル名は何でもOK(店舗判別はCSV中身の「La pilates 〜」から)
     - 同一店舗で複数該当する場合は mtime 最新を採用
     """
     found = {}  # store_jp -> (path, mtime)
-    if not DOWNLOADS.exists():
+    if not INBOX.exists():
         return []
-    pat = re.compile(r"^(\d{0,4})(.+)\.csv$")
-    for f in DOWNLOADS.glob("*.csv"):
-        m = pat.match(f.name)
-        if not m: continue
-        prefix, body = m.group(1), m.group(2)
-        # 5桁以上の数字プレフィクスは拒絶(202604川越.csv など)
-        if prefix and len(prefix) > 4: continue
-        # 店舗名検出
-        for sname in STORE_NAMES:
-            if sname in body:
-                mt = f.stat().st_mtime
-                if sname not in found or mt > found[sname][1]:
-                    found[sname] = (f, mt)
-                break
+    for f in INBOX.glob("*.csv"):
+        store = detect_store_from_csv(f)
+        if not store: continue
+        mt = f.stat().st_mtime
+        if store not in found or mt > found[store][1]:
+            found[store] = (f, mt)
     return [(p, s) for s, (p, _) in found.items()]
 
 
@@ -245,19 +250,8 @@ def main():
         shutil.move(str(f), str(dest))
         print(f"  📦 移動: {f.name} → data/sales/processed/{year_month}/")
 
-    # Slackに即時実績進捗を送信
-    print(f"\n📡 Slackに実績速報を送信...")
-    try:
-        result = subprocess.run(
-            ["/usr/bin/env", "python3", str(PROJECT_ROOT / "src" / "alert_sender.py")],
-            capture_output=True, text=True, timeout=120
-        )
-        if "送信成功" in result.stdout:
-            print("  ✅ Slack送信完了")
-        else:
-            print(f"  ⚠️ {result.stdout[-200:]}")
-    except Exception as e:
-        print(f"  ❌ alert_sender失敗: {e}")
+    # Slack送信は22時の run_daily.sh に任せる(CSV処理ごとの@channelスパム防止)
+    # 必要なら手動で `python3 src/alert_sender.py` 実行
 
     print(f"\n🎉 完了: {datetime.now()}")
     return 0
