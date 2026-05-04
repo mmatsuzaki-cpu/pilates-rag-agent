@@ -73,35 +73,24 @@ def contract_status(rate: float) -> str:
 
 
 def build_message(data: dict, label: str) -> str:
-    """label: 「5月3日時点の実績」など、見出し用ラベル"""
-
-    # 信号機判定(契約率ベース)
+    """label: 「5月3日時点の実績」など、見出し用ラベル
+    店舗順序: 川越 → 大宮 → 高崎 → 神戸元町 → 西宮北口(固定)
+    """
+    # 信号機絵文字は各店舗の見出しに付ける(契約率ベース)
     statuses = {sid: contract_status(d["contract_rate"]) for sid, d in data.items()}
-    red_stores = [s for s in STORES if statuses.get(s["id"]) == "🔴"]
-    yellow_stores = [s for s in STORES if statuses.get(s["id"]) == "🟡"]
-    green_stores = [s for s in STORES if statuses.get(s["id"]) == "🟢"]
 
     lines = []
     lines.append("<!channel>")
     lines.append(f"📊 *ピラティス実績 {label}*")
     lines.append("")
-    lines.append("━━━━━━━━━━━━━━")
-    if red_stores:
-        lines.append(f"🚨 *要対応* ({len(red_stores)}): " + " / ".join(s["name"] for s in red_stores))
-    if yellow_stores:
-        lines.append(f"⚠️ *注意* ({len(yellow_stores)}): " + " / ".join(s["name"] for s in yellow_stores))
-    if green_stores:
-        lines.append(f"✅ *好調* ({len(green_stores)}): " + " / ".join(s["name"] for s in green_stores))
-    lines.append("━━━━━━━━━━━━━━")
-    lines.append("")
 
-    # 店舗別 (🔴→🟡→🟢順)
-    sort_key = {"🔴": 0, "🟡": 1, "🟢": 2, "⚪": 3}
-    sorted_stores = sorted(STORES, key=lambda s: sort_key.get(statuses.get(s["id"], "⚪"), 9))
-
-    for store in sorted_stores:
-        sid = store["id"]
+    # 店舗別(固定順序: 川越→大宮→高崎→神戸元町→西宮北口)
+    STORE_ORDER = ["S001", "S002", "S003", "S004", "S005"]
+    for sid in STORE_ORDER:
         if sid not in data:
+            continue
+        store = next((s for s in STORES if s["id"] == sid), None)
+        if not store:
             continue
         d = data[sid]
         st = statuses.get(sid, "⚪")
