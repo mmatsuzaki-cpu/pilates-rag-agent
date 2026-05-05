@@ -37,34 +37,32 @@ def main():
     log = PROJECT_ROOT / "output" / "logs" / f"feedback_{today}.log"
     counts = parse_log(log)
 
-    if counts["slack"] == 0 and counts["inbox"] == 0 and counts["success"] == 0:
-        print("ℹ️ 通知不要")
-        return 0
-
     archive_id = os.environ.get("NOTION_DATABASE_ID", "").replace("-", "")
     success_id = os.environ.get("NOTION_SUCCESS_DB_ID", "").replace("-", "")
     script_id = os.environ.get("NOTION_SCRIPT_DB_ID", "").replace("-", "")
+
+    total = counts["slack"] + counts["inbox"] + counts["success"]
 
     lines = [
         "📩 *振り返り蓄積完了*",
         f"_{today} {datetime.now().strftime('%H:%M')}_",
         "",
     ]
-    if counts["slack"] > 0:
+    if total == 0:
+        lines.append("ℹ️ 本日の新規取り込みはありませんでした")
+    else:
+        # 0件でも全項目表示(2026-05-05 確定: 毎日DM送るルールに変更)
         lines.append(f"✅ Slack振り返り取得: *{counts['slack']}件*")
-    if counts["inbox"] > 0:
         lines.append(f"✅ LINE/個別FB処理: *{counts['inbox']}件*")
-    if counts["success"] > 0:
         lines.append(f"✨ 成功事例検出: *{counts['success']}件*")
     lines.append("")
     lines.append("━━━━━━━━━━")
     lines.append(f"📊 <https://www.notion.so/{archive_id}|振り返りDB(全件)を見る>")
-    if counts["success"] > 0:
-        lines.append(f"✨ <https://www.notion.so/{success_id}|成功事例集を見る>")
+    lines.append(f"✨ <https://www.notion.so/{success_id}|成功事例集を見る>")
     lines.append(f"💬 <https://www.notion.so/{script_id}|トークスクリプト集を見る>")
 
     if slack_dm(user_id, "\n".join(lines)):
-        print("✅ DM送信OK")
+        print(f"✅ DM送信OK (slack={counts['slack']} inbox={counts['inbox']} success={counts['success']})")
     else:
         print("❌ DM失敗")
     return 0
