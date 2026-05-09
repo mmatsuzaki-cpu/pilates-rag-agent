@@ -33,10 +33,8 @@ CATCHUP_LOG="$LOG_DIR/startup_catchup.log"
         echo "[$(date '+%H:%M:%S')] ⏰ 昨日のdaily未実行 → 補完(今送信)"
         bash "$PROJECT/scripts/run_daily.sh"
     fi
-    if [ ! -f "$LOG_DIR/dm_notify_${YESTERDAY}.log" ]; then
-        echo "[$(date '+%H:%M:%S')] ⏰ 昨日のdm_notify未実行 → 補完(今DM送信)"
-        bash "$PROJECT/scripts/run_dm_notify.sh"
-    fi
+    # dm_notify は当日22時のみ送る方針(2026-05-09)
+    # → 昨日分の補完は廃止。スリープ等で22時に走らなかった日は通知なし
 
     # === 当日分(時刻が来ていれば実行) ===
     # 10時を過ぎていて、今日のfeedbackログが無ければ実行
@@ -55,13 +53,8 @@ CATCHUP_LOG="$LOG_DIR/startup_catchup.log"
         echo "[$(date '+%H:%M:%S')] ✓ 当日daily OK ($HOUR時)"
     fi
 
-    # 22時を過ぎていて、今日のdm_notifyログが無ければ実行
-    if [ "$HOUR" -ge 22 ] && [ ! -f "$LOG_DIR/dm_notify_${TODAY}.log" ]; then
-        echo "[$(date '+%H:%M:%S')] ⏰ 当日dm_notify未実行 → catch-up"
-        bash "$PROJECT/scripts/run_dm_notify.sh"
-    else
-        echo "[$(date '+%H:%M:%S')] ✓ 当日dm_notify OK ($HOUR時)"
-    fi
+    # dm_notify は cron(0 22)が単独で送る → catch-up では送らない(2026-05-09)
+    # 当日22時に走らなかった日は通知なし(松崎さんの希望: 22時のみに通知が来てほしい)
 
     # 3時を過ぎていて、今日のbackupログが無ければ実行(任意)
     if [ "$HOUR" -ge 3 ] && [ ! -f "$LOG_DIR/backup_${TODAY}.log" ]; then
