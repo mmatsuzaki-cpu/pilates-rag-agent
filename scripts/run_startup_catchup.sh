@@ -29,10 +29,8 @@ CATCHUP_LOG="$LOG_DIR/startup_catchup.log"
         bash "$PROJECT/scripts/run_feedback_sync.sh"
         # 補完したら今日のログも作られる(同じスクリプト)→ 当日分は別チェック
     fi
-    if [ ! -f "$LOG_DIR/daily_${YESTERDAY}.log" ]; then
-        echo "[$(date '+%H:%M:%S')] ⏰ 昨日のdaily未実行 → 補完(今送信)"
-        bash "$PROJECT/scripts/run_daily.sh"
-    fi
+    # daily(実績進捗) は当日22時のみ送る方針(2026-05-09)
+    # → 昨日分の補完は廃止(翌朝14時等に過去日付の通知が届く現象を防ぐ)
     # dm_notify は当日22時のみ送る方針(2026-05-09)
     # → 昨日分の補完は廃止。スリープ等で22時に走らなかった日は通知なし
 
