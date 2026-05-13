@@ -326,19 +326,48 @@ def main():
             print(f"  ✅ 質問返信: {kw}")
         time.sleep(1)
 
-    # 振り返り処理(hits無しでもキーワードのみで返信→ノウハウ集案内)
+    # 振り返り処理: 具体的フィードバック生成(2026-05-14〜)
+    # - feedback_builder で具体的なカウンセリング/クロージングFBを生成
+    # - 末尾にノウハウリンクを追加(関連あれば)
+    from feedback_builder import build_detailed_feedback
     for r in reflections:
         text = r.get("text", "")
         ts = r.get("ts", "")
+
+        # スタッフ名: 振り返り先頭1行から取得(例: 「YUKINO」「NANA」「HARUNA」)
+        first_line = text.split("\n", 1)[0].strip() if text else ""
+        staff_name = first_line if 1 <= len(first_line) <= 15 else "スタッフ"
+
+        # 具体的フィードバック生成
+        try:
+            feedback_body = build_detailed_feedback(text, staff_name)
+        except Exception as e:
+            print(f"  ⚠️ FB生成失敗: {e}")
+            feedback_body = None
+
+        # 関連ノウハウ検索(従来機能を末尾に追加)
         kw = extract_concerns(text)
-        if not kw:
-            replied.add(ts); continue
-        hits = search(knowledge_db, kw, 3)
-        reply = build_auto_reply(kw, hits)
-        res = slack_post_message(channel, reply, thread_ts=ts)
+        hits = search(knowledge_db, kw, 3) if kw else []
+
+        # メッセージ組み立て
+        if feedback_body:
+            msg = feedback_body
+            if hits:
+                msg += "\n━━━━━━━━━━━━━━\n📚 *関連ノウハウ集*\n"
+                for i, p in enumerate(hits, 1):
+                    title = page_title(p)
+                    url = p.get("url", "")
+                    msg += f"\n　{i}. <{url}|{title}>"
+                msg += "\n\n詳しい技術的内容や追加トーク例は、Notionのノウハウ集をご確認ください💡"
+            msg += "\n\n━━━━━━━━━━━━━━\n💬 個別に聞きたい時は `@ピラティス振り返りBot` でメンションしてね!"
+        else:
+            # フォールバック: 旧フォーマット
+            msg = build_auto_reply(kw, hits) if kw else "⚠️ FB生成失敗(キーワード取得不可)"
+
+        res = slack_post_message(channel, msg, thread_ts=ts)
         if res.get("ok"):
             replied.add(ts); success += 1
-            print(f"  ✅ 振り返り検知: {kw} (hits={len(hits)})")
+            print(f"  ✅ 振り返り検知: {staff_name} (hits={len(hits)})")
         else:
             print(f"  ❌ 投稿失敗: ts={ts} {res.get('error')}")
         time.sleep(1)
