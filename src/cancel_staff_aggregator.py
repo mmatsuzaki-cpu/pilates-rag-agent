@@ -8,20 +8,26 @@
 - 解約月: 最終支払い日(D列)の翌月(例: 4月最終支払 → 5月解約)
 - 表記揺れ正規化: NAME_NORMALIZE
 - 並び順: 月降順(C列が最新月、右に行くほど過去)
+- 月filter: 現在月以下のみ(未来月の予約解約は除外)
+- 在籍filter: 直近 ACTIVE_MONTHS ヶ月以内に解約レコードがあるスタッフのみ
 - 店舗順: 川越 → 大宮 → 高崎 → 神戸元町 → 西宮北口
 - 整形: 店舗別背景色 + ヘッダ太字 + 全セル境界線 + フリーズ
 
-毎日10時の cron で full_dashboard_updater 経由から呼ばれる。
+毎日10時の cron で run_feedback_sync.sh から呼ばれる。
 """
 
 import sys
 import time
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from common import get_gspread_client
 from store_summary_reader import STORE_SUMMARIES, parse_ymd, with_retry
+
+# 在籍判定: 直近何ヶ月以内に解約レコードがあれば「在籍中」とみなすか
+ACTIVE_MONTHS = 6
 
 DASHBOARD_SSID = "1K0_PP4mGQBHzzKYOo2E8bulcwSJJVShS8JK875bdoZA"
 SHEET_TITLE = "解約集計_スタッフ別"
@@ -45,10 +51,14 @@ STORE_COLORS = {
 
 
 def aggregate(gc):
-    """5店舗の解約報告を読んで集計"""
+    """5店舗の解約報告を読んで集計
+    - 未来月の予約解約は除外(現在月以下のみ)
+    """
     agg = defaultdict(int)
     all_months = set()
     all_staff_by_store = defaultdict(set)
+
+    now_ym = datetime.now().strftime("%Y-%m")  # 例: "2026-05"
 
     for store in STORE_SUMMARIES:
         print(f"  📥 {store['name']} 解約報告 ...", end=" ")
@@ -56,6 +66,7 @@ def aggregate(gc):
         ws = ssh.worksheet("解約報告")
         v = with_retry(ws.get_all_values)
         n = 0
+        skipped_future = 0
         for row in v[1:]:
             if len(row) < 4:
                 continue
@@ -73,13 +84,39 @@ def aggregate(gc):
                 cy += 1
                 cm = 1
             ym = f"{cy}-{cm:02d}"
+            # 未来月はスキップ
+            if ym > now_ym:
+                skipped_future += 1
+                continue
             agg[(store["name"], staff, ym)] += 1
             all_months.add(ym)
             all_staff_by_store[store["name"]].add(staff)
             n += 1
-        print(f"{n}件")
+        extra = f" (未来月スキップ {skipped_future}件)" if skipped_future else ""
+        print(f"{n}件{extra}")
 
     return agg, all_months, all_staff_by_store
+
+
+def filter_active_staff(agg, all_staff_by_store):
+    """直近 ACTIVE_MONTHS ヶ月以内に解約レコードがあるスタッフのみ残す"""
+    now = datetime.now()
+    # 閾値月 = 今からACTIVE_MONTHSヶ月前(=この月以降のレコードがあれば在籍)
+    threshold_year = now.year
+    threshold_month = now.month - ACTIVE_MONTHS + 1
+    while threshold_month <= 0:
+        threshold_month += 12
+        threshold_year -= 1
+    threshold_ym = f"{threshold_year}-{threshold_month:02d}"
+
+    active = defaultdict(set)
+    for store_name, staffs in all_staff_by_store.items():
+        for staff in staffs:
+            for (s, st, ym), cnt in agg.items():
+                if s == store_name and st == staff and ym >= threshold_ym and cnt > 0:
+                    active[store_name].add(staff)
+                    break
+    return active, threshold_ym
 
 
 def col_letter(n):
@@ -209,14 +246,21 @@ def main():
     print("📊 解約集計_スタッフ別 更新開始")
     gc = get_gspread_client()
     agg, all_months, all_staff_by_store = aggregate(gc)
-    print(f"  集計: {len(all_months)}ヶ月 / 計{sum(agg.values())}件\n")
+    print(f"  集計: {len(all_months)}ヶ月 / 計{sum(agg.values())}件")
+
+    # 在籍スタッフのみに絞り込み
+    active_staff, threshold_ym = filter_active_staff(agg, all_staff_by_store)
+    total_before = sum(len(s) for s in all_staff_by_store.values())
+    total_after = sum(len(s) for s in active_staff.values())
+    print(f"  👥 在籍判定: 直近{ACTIVE_MONTHS}ヶ月(>={threshold_ym}) → {total_before}名中 {total_after}名残す")
+    print()
 
     # quota待ち(集計表大量read後の書き込み前)
     print("  ⏱️ quota 待ち 65秒...")
     time.sleep(65)
 
     dash = gc.open_by_key(DASHBOARD_SSID)
-    write_to_sheet(dash, agg, all_months, all_staff_by_store)
+    write_to_sheet(dash, agg, all_months, active_staff)
 
     print("\n🎉 完了")
     return 0
