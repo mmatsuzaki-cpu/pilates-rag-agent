@@ -42,6 +42,13 @@ NAME_NORMALIZE = {
     "利根川": "山本",
 }
 
+# 集計から除外するスタッフ(店舗名, スタッフ名)のセット(2026-05-14)
+# 退職済 or 表示不要のスタッフを手動で除外する
+EXCLUDE_STAFF = {
+    ("西宮北口", "AIRI"),
+    ("西宮北口", "HONOKA"),
+}
+
 # 店舗別の背景色(薄め)
 STORE_COLORS = {
     "川越":     {"red": 0.87, "green": 0.94, "blue": 1.00},  # 薄水色
@@ -74,6 +81,9 @@ def aggregate(gc):
                 continue
             staff = (row[1] or "").strip()
             staff = NAME_NORMALIZE.get(staff, staff)
+            # 除外スタッフをスキップ
+            if (store["name"], staff) in EXCLUDE_STAFF:
+                continue
             pay_date_str = (row[3] or "").strip()
             if not staff or not pay_date_str:
                 continue
