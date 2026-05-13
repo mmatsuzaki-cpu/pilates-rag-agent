@@ -23,6 +23,9 @@ LOG="output/logs/feedback_$(date +%Y-%m-%d).log"
     echo "📊 [5/6] 新スプシ「ピラティス実績全部」更新(契約率/解約率/口コミ)"
     /usr/bin/env python3 src/full_dashboard_updater.py --daily
     echo ""
+    echo "👥 [6/6] 解約集計_スタッフ別 更新(月降順・店舗色分け)"
+    /usr/bin/env python3 src/cancel_staff_aggregator.py
+    echo ""
     # DM通知は別cron(22時 / scripts/run_dm_notify.sh)に分離(2026-05-04)
     echo ""
     echo "完了: $(date '+%H:%M:%S')"
