@@ -24,6 +24,43 @@ def _clean(s):
     return s.strip().lstrip(":：　 ").rstrip(":：　 ").strip()
 
 
+def get_first_customer_block(text):
+    """1投稿に複数客の振り返りが含まれる場合、最初の客だけを取り出す
+    「年齢:」が2回以上出現したら、2人目の「年齢:」より前で切る
+    """
+    matches = list(re.finditer(r"年齢[\s:：]", text))
+    if len(matches) <= 1:
+        return text
+    return text[: matches[1].start()]
+
+
+def extract_staff_name(text):
+    """振り返り先頭からスタッフ名を抽出
+    - 「お疲れ様」「お手隙」「FB」等の挨拶行をスキップ
+    - 日付行・項目ラベル行をスキップ
+    - 短い名前候補行(英大文字 or カタカナ)を返す
+    """
+    SKIP_KEYWORDS = ["お疲れ", "お手隙", "FB", "fb", "よろしく", "ありがとう", "確認", "今回"]
+    LABEL_KEYWORDS = ["年齢", "仕事", "悩み", "既往歴", "契約", "検討理由", "理想", "提案"]
+    for line in text.split("\n")[:6]:
+        line = line.strip()
+        if not line:
+            continue
+        # 挨拶行
+        if any(kw in line for kw in SKIP_KEYWORDS):
+            continue
+        # 日付行 (5/7 / 5月7日)
+        if re.fullmatch(r"\d+\s*[/\-月]\s*\d+\s*[日]?", line):
+            continue
+        # 項目ラベル行
+        if any(label in line for label in LABEL_KEYWORDS):
+            continue
+        # 短い名前候補
+        if 1 <= len(line) <= 15:
+            return line
+    return None
+
+
 def extract_age(text):
     m = re.search(r"年齢[\s:：]*(\d+)", text)
     return m.group(1) if m else None
@@ -160,6 +197,7 @@ def extract_tags(text):
 # ── テンプレ ──────────────────────────────────────────
 
 BARRIER_LABELS = {
+    "contract_success": "契約獲得🎉(定着サポート視点)",
     "other_store_compare": "他店比較タイプ",
     "take_home": "持ち帰り検討タイプ",
     "price_concern": "価格懸念タイプ",
@@ -211,6 +249,15 @@ GOOD_POINTS_GENERIC = "ヒアリングと提案の流れがしっかりまとめ
 
 # クロージング戦略テンプレ(検討の壁別)
 CLOSING_STRATEGIES = {
+    "contract_success": {
+        "intro": "契約獲得お疲れ様です🎉 ここからは「定着サポート」のフェーズに切り替え:",
+        "items": [
+            "①初回体験の感動を冷めさせない\n  「今日感じた変化、来週も体感できますよ」と次回への期待を伝える",
+            "②目標を一緒に設定する\n  「3ヶ月後・半年後にこうなりたい、を一緒に決めましょう」(契約直後のモチベが一番高い)",
+            "③次回予約をその場で確定\n  「来週の同じ時間でお取りしますね」(=固定化で習慣化)",
+            "④中間カウンセリングの予告\n  「3ヶ月後に進捗チェックしましょう」(=モチベ維持・解約予防の最重要施策)",
+        ],
+    },
     "other_store_compare": {
         "intro": "「比較したい」と言われた時点で すでに持ち帰りモード💦\nLINEで送る = 検討期間ができる = 他店と並べられる = 入会率が下がる\n\nその場で決め切るためのアプローチ案:",
         "items": [
@@ -263,6 +310,10 @@ CLOSING_STRATEGIES = {
 
 
 NEXT_FOCUS = {
+    "contract_success": [
+        "契約直後は「初回の感動」を覚えているうちに目標設定+次回固定で習慣化を作る",
+        "中間カウンセリングを早めに予告(=解約予防の最重要施策)",
+    ],
     "other_store_compare": [
         "他店比較タイプは「持ち帰らせない工夫」を1つは入れる",
     ],
@@ -323,16 +374,26 @@ def get_postpartum_phase_questions(years):
 # ── メイン生成関数 ────────────────────────────────────
 
 def build_detailed_feedback(reflection_text, staff_name="スタッフ"):
-    """振り返りテキストから具体的なFBを生成"""
-    age = extract_age(reflection_text)
-    job = extract_job(reflection_text)
-    concerns = extract_concerns(reflection_text)
-    barrier = classify_barrier(reflection_text)
-    tags = extract_tags(reflection_text)
-    contract = extract_contract(reflection_text)
-    good_self = extract_self_good(reflection_text)
-    postpartum_years = extract_postpartum_years(reflection_text)
-    interest_signals = detect_interest_signals(reflection_text)
+    """振り返りテキストから具体的なFBを生成
+    - 複数客の振り返りなら最初の客だけ対象
+    - 契約済なら定着サポート視点のテンプレを使う
+    """
+    # 1投稿に複数客が含まれる場合、最初の客だけ抽出
+    text = get_first_customer_block(reflection_text)
+
+    age = extract_age(text)
+    job = extract_job(text)
+    concerns = extract_concerns(text)
+    barrier = classify_barrier(text)
+    tags = extract_tags(text)
+    contract = extract_contract(text)
+    good_self = extract_self_good(text)
+    postpartum_years = extract_postpartum_years(text)
+    interest_signals = detect_interest_signals(text)
+
+    # 契約済の場合は「contract_success」バリアに上書き(=定着サポート視点)
+    if contract == "あり":
+        barrier = "contract_success"
 
     # 状態整理ライン(重複排除)
     profile_parts = []
@@ -403,8 +464,7 @@ def build_detailed_feedback(reflection_text, staff_name="スタッフ"):
     contract_note = ""
     if contract == "なし":
         contract_note = "(契約なし=失注分析の視点で書いてます)"
-    elif contract == "あり":
-        contract_note = "(契約獲得🎉 定着サポート視点も加えるとさらに◎)"
+    # 契約「あり」のときは barrier_label が既に「契約獲得🎉」なので追記不要
 
     fb = f"""📝 {staff_name}さん、振り返りお疲れ様です:relaxed:
 

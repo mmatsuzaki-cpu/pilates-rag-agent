@@ -272,6 +272,21 @@ def slack_get(method, params):
     return r.json()
 
 
+def fetch_user_name(user_id, cache=None):
+    """Slack ユーザーID → 表示名(display_name優先 / real_name / name)"""
+    if not user_id: return None
+    if cache is None: cache = {}
+    if user_id in cache: return cache[user_id]
+    res = slack_get("users.info", {"user": user_id})
+    name = None
+    if res.get("ok"):
+        u = res.get("user", {})
+        name = (u.get("profile", {}).get("display_name")
+                or u.get("real_name") or u.get("name"))
+    cache[user_id] = name
+    return name
+
+
 def main():
     channel = os.environ["SLACK_FEEDBACK_CHANNEL_ID"]
     knowledge_db = os.environ["NOTION_KNOWLEDGE_DB_ID"]
@@ -329,14 +344,19 @@ def main():
     # 振り返り処理: 具体的フィードバック生成(2026-05-14〜)
     # - feedback_builder で具体的なカウンセリング/クロージングFBを生成
     # - 末尾にノウハウリンクを追加(関連あれば)
-    from feedback_builder import build_detailed_feedback
+    from feedback_builder import build_detailed_feedback, extract_staff_name
+    user_cache = {}
     for r in reflections:
         text = r.get("text", "")
         ts = r.get("ts", "")
+        user_id = r.get("user", "")
 
-        # スタッフ名: 振り返り先頭1行から取得(例: 「YUKINO」「NANA」「HARUNA」)
-        first_line = text.split("\n", 1)[0].strip() if text else ""
-        staff_name = first_line if 1 <= len(first_line) <= 15 else "スタッフ"
+        # スタッフ名抽出: テキスト先頭から名前候補を探す → 取れなければSlack名
+        staff_name = extract_staff_name(text)
+        if not staff_name:
+            staff_name = fetch_user_name(user_id, user_cache) if user_id else "スタッフ"
+        if not staff_name:
+            staff_name = "スタッフ"
 
         # 具体的フィードバック生成
         try:
