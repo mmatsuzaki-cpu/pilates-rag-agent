@@ -197,7 +197,6 @@ def extract_tags(text):
 # ── テンプレ ──────────────────────────────────────────
 
 BARRIER_LABELS = {
-    "contract_success": "契約獲得🎉(定着サポート視点)",
     "other_store_compare": "他店比較タイプ",
     "take_home": "持ち帰り検討タイプ",
     "price_concern": "価格懸念タイプ",
@@ -391,9 +390,9 @@ def build_detailed_feedback(reflection_text, staff_name="スタッフ"):
     postpartum_years = extract_postpartum_years(text)
     interest_signals = detect_interest_signals(text)
 
-    # 契約済の場合は「contract_success」バリアに上書き(=定着サポート視点)
-    if contract == "あり":
-        barrier = "contract_success"
+    # 検討の壁(barrier)と契約結果(contract)は別軸として扱う
+    # 検討の壁: 他店比較/価格懸念/時間懸念 etc(契約有無に関係なくお客様が迷っていた点)
+    # 契約結果: あり/なし → クロージングの視点を分岐(定着サポート vs 失注分析)
 
     # 状態整理ライン(重複排除)
     profile_parts = []
@@ -437,8 +436,15 @@ def build_detailed_feedback(reflection_text, staff_name="スタッフ"):
         ]
     deep_qs_text = "\n".join([f"{chr(0x2460+i)}{q}" for i, q in enumerate(deep_qs[:5])])
 
-    # クロージング戦略
-    closing = CLOSING_STRATEGIES.get(barrier, CLOSING_STRATEGIES["generic"])
+    # クロージング戦略: 契約結果で視点を分岐
+    # - 契約あり → 定着サポート視点(barrier 関係なく)
+    # - 契約なし → 検討の壁(barrier)別の失注分析視点
+    if contract == "あり":
+        closing = CLOSING_STRATEGIES["contract_success"]
+        closing_section_heading = "クロージング(契約獲得🎉 → 定着サポート視点)"
+    else:
+        closing = CLOSING_STRATEGIES.get(barrier, CLOSING_STRATEGIES["generic"])
+        closing_section_heading = f"クロージング({barrier_label}への対応)"
     closing_text = closing["intro"] + "\n\n" + "\n\n".join(closing["items"])
 
     # 良かった点 + 関心度シグナル追記
@@ -453,25 +459,31 @@ def build_detailed_feedback(reflection_text, staff_name="スタッフ"):
             good_text += f"\n・{sig}"
         good_text += "\n→ お客様から能動的なアクションが出ている = 関心度はかなり高い証拠✨"
 
-    # 次回意識
-    next_focus = NEXT_FOCUS.get(barrier, NEXT_FOCUS["generic"]).copy()
+    # 次回意識: 契約結果で視点を分岐
+    if contract == "あり":
+        next_focus = NEXT_FOCUS["contract_success"].copy()
+    else:
+        next_focus = NEXT_FOCUS.get(barrier, NEXT_FOCUS["generic"]).copy()
     for tag in tags:
         if tag in NEXT_FOCUS_BY_TAG:
             next_focus.append(NEXT_FOCUS_BY_TAG[tag])
     next_focus_text = "\n".join([f"・{x}" for x in next_focus])
 
-    # 契約状況コメント
-    contract_note = ""
-    if contract == "なし":
-        contract_note = "(契約なし=失注分析の視点で書いてます)"
-    # 契約「あり」のときは barrier_label が既に「契約獲得🎉」なので追記不要
+    # 契約結果表示
+    if contract == "あり":
+        contract_result = "🎉 契約獲得"
+    elif contract == "なし":
+        contract_result = "🥲 契約なし(失注分析視点)"
+    else:
+        contract_result = "不明"
 
     fb = f"""📝 {staff_name}さん、振り返りお疲れ様です:relaxed:
 
 【お客様の状態整理(営業面)】
 ・{profile}
 ・主訴: {concerns or "不明"}
-・検討の壁: {barrier_label} {contract_note}
+・検討の壁: {barrier_label}
+・結果: {contract_result}
 
 
 📌 カウンセリングで良かった点
@@ -482,7 +494,7 @@ def build_detailed_feedback(reflection_text, staff_name="スタッフ"):
 {deep_qs_text}
 
 
-💎 クロージング({barrier_label}への対応)
+💎 {closing_section_heading}
 {closing_text}
 
 
