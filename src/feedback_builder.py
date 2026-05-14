@@ -18,30 +18,36 @@ import re
 
 # ── 抽出関数 ───────────────────────────────────────────
 
+def _clean(s):
+    """先頭末尾の不要な記号(コロン全角/半角・スペース)を削除"""
+    if not s: return ""
+    return s.strip().lstrip(":：　 ").rstrip(":：　 ").strip()
+
+
 def extract_age(text):
-    m = re.search(r"年齢[\s::]*(\d+)", text)
+    m = re.search(r"年齢[\s:：]*(\d+)", text)
     return m.group(1) if m else None
 
 
 def extract_job(text):
-    m = re.search(r"仕事[\s::]*([^\n]+)", text)
+    m = re.search(r"仕事[\s:：]*([^\n]+)", text)
     if m:
-        return m.group(1).strip()[:30]
+        return _clean(m.group(1))[:30]
     return None
 
 
 def extract_concerns(text):
-    m = re.search(r"悩み[\s::]*([^\n]+)", text)
+    m = re.search(r"悩み[\s:：]*([^\n]+)", text)
     if m:
-        return m.group(1).strip()[:80]
+        return _clean(m.group(1))[:80]
     return None
 
 
 def extract_self_good(text):
     """「今回の良かったこと」セクションを抽出"""
-    m = re.search(r"今回の良かったこと[\s::]*\n*([\s\S]+?)(?=\n\n|\n[^・\s]|$)", text)
+    m = re.search(r"今回の良かったこと[\s:：]*\n*([\s\S]+?)(?=\n\n|\n[^・\s]|$)", text)
     if m:
-        return m.group(1).strip()[:300]
+        return _clean(m.group(1))[:300]
     return None
 
 
@@ -79,14 +85,19 @@ def detect_interest_signals(text):
 
 
 def extract_contract(text):
-    """契約状況: あり / なし / 不明"""
-    m = re.search(r"契約の有無[^:]*[\s::]*([^\n]+)", text)
-    if m:
-        v = m.group(1).strip()
-        if "なし" in v or "無" in v:
-            return "なし"
-        if v and v != "":
-            return "あり"
+    """契約状況: あり / なし / 不明
+    「契約の有無(コース):なし」(全角・半角括弧両対応)
+    行ベースで走査(正規表現の \\s が改行を含むのを回避)
+    """
+    for line in text.split("\n"):
+        if "契約の有無" in line:
+            m = re.search(r"[:：][ \t]*(.+)$", line)
+            if m:
+                v = _clean(m.group(1))
+                if not v: return "不明"
+                if "なし" in v or "無" in v or "ない" in v:
+                    return "なし"
+                return "あり"
     return "不明"
 
 
@@ -95,7 +106,7 @@ def extract_contract(text):
 def classify_barrier(text):
     """検討の壁を分類。優先順位順にチェック"""
     # 検討理由セクションを優先的に見る
-    m = re.search(r"検討理由[\s::]*([^\n]+)", text)
+    m = re.search(r"検討理由[\s:：]*([^\n]+)", text)
     reason = m.group(1) if m else ""
     full = text + " " + reason
 
