@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from common import get_gspread_client
 
 
-def with_retry(fn, *args, retries=3, delay=65, **kwargs):
+def with_retry(fn, *args, retries=3, delay=90, **kwargs):
     """Sheets API 呼び出しを 429リトライ付きで実行
     - 429(quota exceeded)時は delay 秒待ってリトライ(最大 retries 回)
     - その他の例外はそのまま re-raise
@@ -203,7 +203,11 @@ def get_all_stores_summary(year: int = None, month: int = None) -> dict:
 
     print(f"📥 集計表から取得: {target_year}年{target_month}月")
     result = {}
-    for store in STORE_SUMMARIES:
+    for i, store in enumerate(STORE_SUMMARIES):
+        # 店舗間にsleep挟んでquota分散(2店舗目以降、各15秒待機)
+        # ※ 60秒/分のreadクォータ枯渇防止
+        if i > 0:
+            time.sleep(15)
         print(f"  {store['name']}...")
         try:
             data = get_store_summary(gc, store, target_year, target_month)
