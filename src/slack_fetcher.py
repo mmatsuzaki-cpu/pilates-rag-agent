@@ -105,9 +105,30 @@ def add_to_notion(msg_dict):
     stores = detect_stores(text)
     categories = detect_categories(text)
     body_preview = re.sub(r"\s+", " ", text)[:50]
-    title_prefix = "🧵 " if is_reply else "📝 "
-    dt_short = msg_dict.get("datetime_str", dt_iso[:16])
-    title_text = f"{title_prefix}{dt_short} {user_name}: {body_preview}"
+    # わかりやすいタイトル: 💭 悩み | 店舗 スタッフ | 日付 [結果]
+    from title_builder import make_friendly_title
+    if is_reply:
+        title_text = f"🧵 {user_name}: {body_preview[:60]}"
+    else:
+        # 「悩み」「結果」抽出
+        concern = ""
+        m = re.search(r"悩み[:：\s]+([^\n]+)", text)
+        if m: concern = m.group(1)[:60]
+        result = ""
+        m = re.search(r"(?:契約|結果)[:：\s]+([^\n]+)", text)
+        if m:
+            res_raw = m.group(1)[:20]
+            if "あり" in res_raw: result = "契約あり"
+            elif "なし" in res_raw: result = "契約なし"
+            else: result = res_raw[:6]
+        title_text = make_friendly_title(
+            concern=concern,
+            store=stores[0] if stores else "",
+            staff=user_name,
+            date=dt_iso[:10],
+            result=result,
+            fallback=body_preview,
+        )
 
     properties = {
         "タイトル": {"title": [{"type": "text", "text": {"content": title_text[:200]}}]},

@@ -134,6 +134,17 @@ def page_title(p):
     return "".join([x.get("plain_text", "") for x in t])
 
 
+def page_link_label(p):
+    """Slackリンク用ラベル: 悩みキーワード部分だけ抽出"""
+    title = page_title(p)
+    m = re.match(r"^[💭🧠📌🎯]?\s*(.+?)が気になる方", title)
+    if m: return m.group(1).strip()
+    m = re.match(r"^[💭🧠📌🎯]\s*([^|]+?)\s*\|", title)
+    if m: return m.group(1).strip()
+    cleaned = re.sub(r"^[📝📜🧵🧠📌🎯💭]\s*\[?[\d\-/:年月日時分\s]+\]?\s*[^:]*:\s*", "", title)
+    return cleaned[:40] if cleaned else title[:40]
+
+
 def page_keywords(p):
     pp = p.get("properties", {})
     kws = pp.get("キーワード", {}).get("multi_select", [])
@@ -251,9 +262,9 @@ def build_auto_reply(keywords, hits):
         lines.append("📚 *関連ノウハウ*")
         lines.append("")
         for i, p in enumerate(hits, 1):
-            title = page_title(p)
+            link_label = page_link_label(p)
             url = p.get("url", "")
-            lines.append(f"　{i}. <{url}|{title}>")
+            lines.append(f"　{i}. <{url}|{link_label}>")
         lines.append("")
         lines.append("詳しい改善策やトーク例は、Notionのノウハウ集をご確認ください💡")
     else:
@@ -375,9 +386,9 @@ def main():
             if hits:
                 msg += "\n━━━━━━━━━━━━━━\n📚 *関連ノウハウ集*\n"
                 for i, p in enumerate(hits, 1):
-                    title = page_title(p)
+                    link_label = page_link_label(p)
                     url = p.get("url", "")
-                    msg += f"\n　{i}. <{url}|{title}>"
+                    msg += f"\n　{i}. <{url}|{link_label}>"
                 msg += "\n\n詳しい技術的内容や追加トーク例は、Notionのノウハウ集をご確認ください💡"
             msg += "\n\n━━━━━━━━━━━━━━\n💬 個別に聞きたい時は `@ピラティス振り返りBot` でメンションしてね!"
         else:
