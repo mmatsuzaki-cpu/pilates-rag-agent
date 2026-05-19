@@ -477,7 +477,7 @@ def build_detailed_feedback(reflection_text, staff_name="スタッフ"):
     else:
         contract_result = "不明"
 
-    fb = f"""📝 {staff_name}さん、振り返りお疲れ様です:relaxed:
+    fb = f"""振り返りお疲れ様です:relaxed:
 
 【お客様の状態整理(営業面)】
 ・{profile}

@@ -135,14 +135,47 @@ def page_title(p):
 
 
 def page_link_label(p):
-    """Slackリンク用ラベル: 悩みキーワード部分だけ抽出"""
+    """Slackリンク用ラベル: キーワード優先 → 悩み抽出"""
+    kws = page_keywords(p)
+    if kws:
+        return "、".join(kws[:4])
     title = page_title(p)
     m = re.match(r"^[💭🧠📌🎯]?\s*(.+?)が気になる方", title)
     if m: return m.group(1).strip()
     m = re.match(r"^[💭🧠📌🎯]\s*([^|]+?)\s*\|", title)
     if m: return m.group(1).strip()
-    cleaned = re.sub(r"^[📝📜🧵🧠📌🎯💭]\s*\[?[\d\-/:年月日時分\s]+\]?\s*[^:]*:\s*", "", title)
-    return cleaned[:40] if cleaned else title[:40]
+    m = re.search(r"❻\s*悩み[\s:：]+([^❼\n,、]+(?:[、,][^❼\n]+){0,2})", title)
+    if m: return m.group(1).strip()[:50]
+    cleaned = re.sub(r"^[📝📜🧵🧠📌🎯💭🎓]\s*", "", title)
+    cleaned = re.sub(r"^\[?[\d\-/:年月日時分\s]+\]?\s*", "", cleaned)
+    cleaned = re.sub(r"^\([^)]*\)\s*", "", cleaned)
+    cleaned = re.sub(r"^❶[^❷]*❷[^❸]*❸[^❹]*❹[^❺]*", "", cleaned)
+    return cleaned[:50] if cleaned else title[:50]
+
+
+def build_unique_labels(hits):
+    """関連ノウハウのリンクラベル + 重複時タイトル補足で区別"""
+    out = []
+    seen_count = {}
+    for p in hits:
+        base = page_link_label(p)
+        if base not in seen_count:
+            seen_count[base] = 1
+            out.append(base)
+            continue
+        seen_count[base] += 1
+        title = page_title(p)
+        suffix = ""
+        m = re.match(r"^[📝📜🧵🧠📌🎯💭🎓]?\s*【([^】]+)】", title)
+        if m:
+            suffix = m.group(1)
+        else:
+            cleaned = re.sub(r"^[📝📜🧵🧠📌🎯💭🎓\s\[\]:\d年月日/\-()(\)]+", "", title)
+            cleaned = re.sub(r"^❶[^❺]*❺[^❻]*", "", cleaned)
+            cleaned = cleaned.strip()[:20] or f"#{seen_count[base]}"
+            suffix = cleaned
+        out.append(f"{base}({suffix})")
+    return out
 
 
 def page_keywords(p):
@@ -261,10 +294,10 @@ def build_auto_reply(keywords, hits):
     if hits:
         lines.append("📚 *関連ノウハウ*")
         lines.append("")
+        labels = build_unique_labels(hits)
         for i, p in enumerate(hits, 1):
-            link_label = page_link_label(p)
             url = p.get("url", "")
-            lines.append(f"　{i}. <{url}|{link_label}>")
+            lines.append(f"　{i}. <{url}|{labels[i-1]}>")
         lines.append("")
         lines.append("詳しい改善策やトーク例は、Notionのノウハウ集をご確認ください💡")
     else:
@@ -385,10 +418,10 @@ def main():
             msg = feedback_body
             if hits:
                 msg += "\n━━━━━━━━━━━━━━\n📚 *関連ノウハウ集*\n"
+                labels = build_unique_labels(hits)
                 for i, p in enumerate(hits, 1):
-                    link_label = page_link_label(p)
                     url = p.get("url", "")
-                    msg += f"\n　{i}. <{url}|{link_label}>"
+                    msg += f"\n　{i}. <{url}|{labels[i-1]}>"
                 msg += "\n\n詳しい技術的内容や追加トーク例は、Notionのノウハウ集をご確認ください💡"
             msg += "\n\n━━━━━━━━━━━━━━\n💬 個別に聞きたい時は `@ピラティス振り返りBot` でメンションしてね!"
         else:
