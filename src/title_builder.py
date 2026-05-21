@@ -36,21 +36,35 @@ def make_friendly_title(
     date: str = "",      # "YYYY-MM-DD" or "M/D" or datetime
     result: str = "",
     fallback: str = "",  # 全部空ならこれを使う
+    customer: str = "",  # 顧客名
 ) -> str:
     """わかりやすいタイトル生成
     優先順: 悩み > 店舗+スタッフ > 日付 > 結果
 
     例:
-      "💭 フェイスラインのたるみ・ほうれい線が気になる方 | 高崎店 加藤 | 5/15 [未入会]"
+      "💭 フェイスラインのたるみ・ほうれい線(田北香世子様) | 高崎店 加藤 | 5/15 [未入会]"
     """
     parts = []
+
+    # 顧客名 短縮(様あれば前まで)
+    customer_short = ""
+    if customer:
+        c = re.sub(r"\s+", "", customer).strip()
+        if "様" in c:
+            customer_short = c.split("様")[0] + "様"
+        else:
+            customer_short = c[:20]
 
     # 1. 悩みヘッダ
     concern_short = _shorten_concern(concern)
     if concern_short:
-        parts.append(f"💭 {concern_short}が気になる方")
+        if customer_short:
+            parts.append(f"💭 {concern_short}({customer_short})")
+        else:
+            parts.append(f"💭 {concern_short}が気になる方")
+    elif customer_short:
+        parts.append(f"📝 {customer_short}")
     elif fallback:
-        # 悩み無し→fallback(本文先頭等)
         fb = re.sub(r"\s+", " ", fallback)[:50]
         parts.append(f"📝 {fb}")
     else:
