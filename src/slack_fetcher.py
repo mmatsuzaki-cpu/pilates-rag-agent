@@ -170,7 +170,9 @@ def main():
     processed_ts = set(state.get("processed_ts", []))
 
     lookback_days = 14
-    oldest = str(time.time() - lookback_days * 86400)
+    # ⚠️ Slack API は oldest が float(小数点付)だと 0件返す → 整数化必須
+    # (2026-05-24 発覚: str(time.time()) の小数点でフィルタが効かなかった)
+    oldest = str(int(time.time() - lookback_days * 86400))
     print(f"📥 Slack取得(過去{lookback_days}日 / 既処理={len(processed_ts)})")
 
     data = slack_get("conversations.history", {"channel": channel, "limit": 200, "oldest": oldest})
