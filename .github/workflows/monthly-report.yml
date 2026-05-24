@@ -48,7 +48,7 @@ jobs:
         run: |
           mkdir -p config data output/logs
           printf '%s' "${SLACK_BOT_TOKEN}" > config/slack_bot_token.txt
-          printf '%s' "${GOOGLE_SERVICE_ACCOUNT_JSON}" > config/credentials.json
+          echo "${GOOGLE_SERVICE_ACCOUNT_JSON}" | base64 -d > config/credentials.json
           cat > config/.env <<EOF
           NOTION_TOKEN=${NOTION_TOKEN}
           NOTION_DATABASE_ID=${NOTION_DATABASE_ID}
