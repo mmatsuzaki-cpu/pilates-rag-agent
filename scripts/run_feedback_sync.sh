@@ -11,6 +11,9 @@ LOG="output/logs/feedback_$(date +%Y-%m-%d).log"
     echo "📨 [1/4] Slack→Notion同期"
     /usr/bin/env python3 src/slack_fetcher.py
     echo ""
+    echo "💎 [1.5/4] リーダーFB抽出→Notion蓄積"
+    /usr/bin/env python3 src/leader_fb_extractor.py
+    echo ""
     echo "📥 [2/4] 受信箱処理"
     /usr/bin/env python3 src/inbox_processor.py
     echo ""
