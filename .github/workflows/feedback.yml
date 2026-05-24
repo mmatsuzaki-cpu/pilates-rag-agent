@@ -1,0 +1,99 @@
+name: 📥 ピラティス Feedback 同期 + 学習 (10:00 JST)
+
+on:
+  schedule:
+    - cron: '7 1 * * *'    # 10:07 JST
+  workflow_dispatch:
+
+concurrency:
+  group: pilates-feedback
+  cancel-in-progress: false
+
+jobs:
+  feedback-sync:
+    name: ピラティス feedback 全自動処理
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: credentials / .env 復元
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          NOTION_KNOWLEDGE_DB_ID: ${{ secrets.NOTION_KNOWLEDGE_DB_ID }}
+          NOTION_INBOX_DB_ID: ${{ secrets.NOTION_INBOX_DB_ID }}
+          NOTION_SUCCESS_DB_ID: ${{ secrets.NOTION_SUCCESS_DB_ID }}
+          NOTION_SCRIPT_DB_ID: ${{ secrets.NOTION_SCRIPT_DB_ID }}
+          NOTION_PARENT_PAGE_ID: ${{ secrets.NOTION_PARENT_PAGE_ID }}
+          NOTION_LEADER_FB_DB_ID: ${{ secrets.NOTION_LEADER_FB_DB_ID }}
+          SLACK_FEEDBACK_CHANNEL_ID: ${{ secrets.SLACK_FEEDBACK_CHANNEL_ID }}
+          SLACK_OWNER_USER_ID: ${{ secrets.SLACK_OWNER_USER_ID }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          OUTPUT_SPREADSHEET_ID: ${{ secrets.OUTPUT_SPREADSHEET_ID }}
+          GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          mkdir -p config data output/logs
+          printf '%s' "${SLACK_BOT_TOKEN}" > config/slack_bot_token.txt
+          printf '%s' "${GOOGLE_SERVICE_ACCOUNT_JSON}" > config/credentials.json
+          cat > config/.env <<EOF
+          NOTION_TOKEN=${NOTION_TOKEN}
+          NOTION_DATABASE_ID=${NOTION_DATABASE_ID}
+          NOTION_KNOWLEDGE_DB_ID=${NOTION_KNOWLEDGE_DB_ID}
+          NOTION_INBOX_DB_ID=${NOTION_INBOX_DB_ID}
+          NOTION_SUCCESS_DB_ID=${NOTION_SUCCESS_DB_ID}
+          NOTION_SCRIPT_DB_ID=${NOTION_SCRIPT_DB_ID}
+          NOTION_PARENT_PAGE_ID=${NOTION_PARENT_PAGE_ID}
+          NOTION_LEADER_FB_DB_ID=${NOTION_LEADER_FB_DB_ID}
+          SLACK_FEEDBACK_CHANNEL_ID=${SLACK_FEEDBACK_CHANNEL_ID}
+          SLACK_OWNER_USER_ID=${SLACK_OWNER_USER_ID}
+          SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+          OUTPUT_SPREADSHEET_ID=${OUTPUT_SPREADSHEET_ID}
+          GOOGLE_PLACES_API_KEY=${GOOGLE_PLACES_API_KEY}
+          SLACK_BOT_TOKEN_FILE=config/slack_bot_token.txt
+          EOF
+
+      - name: 📨 Slack→Notion 同期
+        run: python -u src/slack_fetcher.py
+        continue-on-error: true
+
+      - name: 💎 リーダーFB抽出 → Notion蓄積
+        run: python -u src/leader_fb_extractor.py
+        continue-on-error: true
+
+      - name: 📥 受信箱処理
+        run: python -u src/inbox_processor.py
+        continue-on-error: true
+
+      - name: ✨ 成功事例検出
+        run: python -u src/success_detector.py --days 7
+        continue-on-error: true
+
+      - name: ⭐ 口コミ取得(Google + HPB)
+        run: python -u src/reviews_fetcher.py
+        continue-on-error: true
+
+      - name: 📊 ダッシュボード更新(契約率/解約率/口コミ)
+        run: python -u src/full_dashboard_updater.py --daily
+        continue-on-error: true
+
+      - name: 👥 解約集計_スタッフ別 更新
+        run: python -u src/cancel_staff_aggregator.py
+        continue-on-error: true
+
+      - name: ログ確認
+        if: always()
+        run: |
+          ls -la output/logs/ 2>/dev/null || true
+          tail -100 output/logs/feedback_*.log 2>/dev/null || true

@@ -1,0 +1,78 @@
+name: 📊 ピラティス Daily 実績配信 (22:00 JST)
+
+on:
+  schedule:
+    - cron: '7 13 * * *'   # 22:07 JST (混雑回避)
+  workflow_dispatch:
+
+concurrency:
+  group: pilates-daily
+  cancel-in-progress: false
+
+jobs:
+  send-daily:
+    name: ピラティス実績速報
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: credentials / .env 復元
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          NOTION_KNOWLEDGE_DB_ID: ${{ secrets.NOTION_KNOWLEDGE_DB_ID }}
+          NOTION_INBOX_DB_ID: ${{ secrets.NOTION_INBOX_DB_ID }}
+          NOTION_SUCCESS_DB_ID: ${{ secrets.NOTION_SUCCESS_DB_ID }}
+          NOTION_SCRIPT_DB_ID: ${{ secrets.NOTION_SCRIPT_DB_ID }}
+          NOTION_PARENT_PAGE_ID: ${{ secrets.NOTION_PARENT_PAGE_ID }}
+          NOTION_LEADER_FB_DB_ID: ${{ secrets.NOTION_LEADER_FB_DB_ID }}
+          SLACK_FEEDBACK_CHANNEL_ID: ${{ secrets.SLACK_FEEDBACK_CHANNEL_ID }}
+          SLACK_OWNER_USER_ID: ${{ secrets.SLACK_OWNER_USER_ID }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          OUTPUT_SPREADSHEET_ID: ${{ secrets.OUTPUT_SPREADSHEET_ID }}
+          GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          mkdir -p config data output/logs
+          printf '%s' "${SLACK_BOT_TOKEN}" > config/slack_bot_token.txt
+          printf '%s' "${GOOGLE_SERVICE_ACCOUNT_JSON}" > config/credentials.json
+          cat > config/.env <<EOF
+          NOTION_TOKEN=${NOTION_TOKEN}
+          NOTION_DATABASE_ID=${NOTION_DATABASE_ID}
+          NOTION_KNOWLEDGE_DB_ID=${NOTION_KNOWLEDGE_DB_ID}
+          NOTION_INBOX_DB_ID=${NOTION_INBOX_DB_ID}
+          NOTION_SUCCESS_DB_ID=${NOTION_SUCCESS_DB_ID}
+          NOTION_SCRIPT_DB_ID=${NOTION_SCRIPT_DB_ID}
+          NOTION_PARENT_PAGE_ID=${NOTION_PARENT_PAGE_ID}
+          NOTION_LEADER_FB_DB_ID=${NOTION_LEADER_FB_DB_ID}
+          SLACK_FEEDBACK_CHANNEL_ID=${SLACK_FEEDBACK_CHANNEL_ID}
+          SLACK_OWNER_USER_ID=${SLACK_OWNER_USER_ID}
+          SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+          OUTPUT_SPREADSHEET_ID=${OUTPUT_SPREADSHEET_ID}
+          GOOGLE_PLACES_API_KEY=${GOOGLE_PLACES_API_KEY}
+          SLACK_BOT_TOKEN_FILE=config/slack_bot_token.txt
+          EOF
+
+      - name: ピラティス実績速報 → #ピラティス_実績進捗
+        run: python -u src/alert_sender.py
+
+      - name: 振り返り蓄積完了通知 → 松崎さんDM
+        run: python -u src/notify_after_sync.py
+        continue-on-error: true
+
+      - name: ログ確認
+        if: always()
+        run: |
+          ls -la output/logs/ 2>/dev/null || true
+          tail -50 output/logs/daily_*.log 2>/dev/null || true
