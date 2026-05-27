@@ -30,6 +30,7 @@ try:
     GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
     NOTION_TOKEN = st.secrets.get("NOTION_TOKEN", "")
     NOTION_LEADER_FB_DB_ID = st.secrets.get("NOTION_LEADER_FB_DB_ID", "")
+    NOTION_FB_HISTORY_DB_ID = st.secrets.get("NOTION_FB_HISTORY_DB_ID", "")
     SLACK_BOT_TOKEN = st.secrets.get("SLACK_BOT_TOKEN", "")
     SLACK_FEEDBACK_CHANNEL_ID = st.secrets.get("SLACK_FEEDBACK_CHANNEL_ID", "C0B0L805YKT")
     SLACK_OWNER_USER_ID = st.secrets.get("SLACK_OWNER_USER_ID", "")
@@ -37,6 +38,7 @@ except Exception:
     GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
     NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "")
     NOTION_LEADER_FB_DB_ID = os.environ.get("NOTION_LEADER_FB_DB_ID", "")
+    NOTION_FB_HISTORY_DB_ID = os.environ.get("NOTION_FB_HISTORY_DB_ID", "")
     SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "")
     SLACK_FEEDBACK_CHANNEL_ID = os.environ.get("SLACK_FEEDBACK_CHANNEL_ID", "C0B0L805YKT")
     SLACK_OWNER_USER_ID = os.environ.get("SLACK_OWNER_USER_ID", "")
@@ -233,6 +235,103 @@ def send_slack_notifications(staff_name: str, session_date, result: dict):
                                 "text": f"✅ *育成FB処理完了*\n{staff_name} さん({session_date})の評価が #ピラティス_新規振り返り に投稿されました📩"})
 
 
+# ── 4. Notion 蓄積 ────────────────────────────────
+
+def _rich_text(content: str, max_len: int = 2000) -> list:
+    """Notion rich_text 形式に変換(2000文字制限あり)"""
+    if not content:
+        return []
+    return [{"type": "text", "text": {"content": str(content)[:max_len]}}]
+
+
+def save_to_notion(staff_name: str, session_date, result: dict) -> str:
+    """評価結果を Notion DB「📊 ピラティス育成FB履歴」に保存
+    返り値: 作成したページURL(失敗時は空文字)
+    """
+    if not NOTION_TOKEN or not NOTION_FB_HISTORY_DB_ID:
+        return ""
+
+    import requests
+    H = {
+        "Authorization": f"Bearer {NOTION_TOKEN}",
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json",
+    }
+
+    scores = result.get("scores", {})
+    hearing = int(scores.get("hearing", 0))
+    proposal = int(scores.get("proposal", 0))
+    closing = int(scores.get("closing", 0))
+    tone = int(scores.get("tone", 0))
+    avg = round((hearing + proposal + closing + tone) / 4, 2) if any([hearing, proposal, closing, tone]) else 0
+
+    customer_info = result.get("customer_info") or {}
+    age = customer_info.get("age", "—")
+    job = customer_info.get("job", "")
+    concerns = customer_info.get("concerns", "")
+    history = customer_info.get("history", "")
+
+    contract = result.get("contract", "なし")
+    course = result.get("course", "—") or "—"
+    store = result.get("store", "")
+    questions = result.get("questions", "")
+    transcript = result.get("transcript", "")
+    summary = result.get("session_summary", "")
+    good_points = result.get("good_points", "")
+    improvements = result.get("improvements", "")
+
+    # セッション日: date(YYYY-MM-DD) に変換
+    if hasattr(session_date, "isoformat"):
+        date_str = session_date.isoformat()
+    else:
+        date_str = str(session_date)
+
+    properties = {
+        "スタッフ名": {"title": [{"type": "text", "text": {"content": staff_name}}]},
+        "セッション日": {"date": {"start": date_str}},
+        "ヒアリング★": {"number": hearing},
+        "提案★": {"number": proposal},
+        "クロージング★": {"number": closing},
+        "トーン★": {"number": tone},
+        "平均★": {"number": avg},
+        "仕事": {"rich_text": _rich_text(job)},
+        "悩み": {"rich_text": _rich_text(concerns)},
+        "既往歴": {"rich_text": _rich_text(history)},
+        "振り返り要約": {"rich_text": _rich_text(summary)},
+        "良かった点": {"rich_text": _rich_text(good_points)},
+        "改善点": {"rich_text": _rich_text(improvements)},
+        "疑問点": {"rich_text": _rich_text(questions)},
+        "文字起こし全文": {"rich_text": _rich_text(transcript)},
+    }
+
+    # セレクト系: 値があるときだけ設定(空だとAPIエラー)
+    if store:
+        properties["店舗"] = {"select": {"name": store}}
+    if contract:
+        properties["契約結果"] = {"select": {"name": contract}}
+    if course and course != "":
+        properties["コース"] = {"select": {"name": course}}
+    if age and age != "":
+        properties["年齢"] = {"select": {"name": age}}
+
+    payload = {
+        "parent": {"database_id": NOTION_FB_HISTORY_DB_ID},
+        "properties": properties,
+    }
+
+    try:
+        r = requests.post("https://api.notion.com/v1/pages", headers=H, json=payload, timeout=30)
+        if r.status_code == 200:
+            return r.json().get("url", "")
+        else:
+            # 失敗してもメインフローは止めない
+            print(f"[Notion保存失敗] {r.status_code}: {r.text[:300]}")
+            return ""
+    except Exception as e:
+        print(f"[Notion保存例外] {e}")
+        return ""
+
+
 # ── メイン関数 ────────────────────────────────────
 
 def analyze_session(audio_file, staff_name: str, session_date,
@@ -266,9 +365,15 @@ def analyze_session(audio_file, staff_name: str, session_date,
         result["course"] = course
         result["store"] = store
         result["questions"] = questions
+        result["customer_info"] = customer_info or {}
 
         # 4. Slack通知
         send_slack_notifications(staff_name, session_date, result)
+
+        # 5. Notion 蓄積(失敗してもメインは止めない)
+        notion_url = save_to_notion(staff_name, session_date, result)
+        if notion_url:
+            result["notion_url"] = notion_url
 
         return result
     finally:

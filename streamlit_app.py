@@ -510,6 +510,11 @@ def main():
         st.divider()
         st.caption("Slack に 振り返り内容 + 評価 + FB + 疑問点 が自動投稿されました")
 
+        # Notion 蓄積リンク
+        notion_url = result.get("notion_url", "")
+        if notion_url:
+            st.caption(f"📊 Notion蓄積完了 → [履歴ページを開く]({notion_url})")
+
 
 if __name__ == "__main__":
     main()
