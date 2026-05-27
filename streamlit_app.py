@@ -300,9 +300,23 @@ def render_brand_header():
 # ── パスワード認証 ────────────────────────────────────
 
 def check_password():
-    """松崎さん設定のパスワードでログイン"""
+    """松崎さん設定のパスワードでログイン
+    URL クエリパラメータ ?key=xxx でも自動ログイン可
+    例: https://pilates-fb.streamlit.app/?key=miraipilates5721!
+    """
+    APP_PASSWORD = st.secrets.get("APP_PASSWORD", "")
+
+    # ── URLクエリパラメータでの自動ログイン ──
+    try:
+        url_key = st.query_params.get("key", "")
+    except Exception:
+        # 古いStreamlit互換
+        url_key = st.experimental_get_query_params().get("key", [""])[0]
+    if url_key and url_key == APP_PASSWORD:
+        st.session_state["password_correct"] = True
+
     def password_entered():
-        if st.session_state.get("password") == st.secrets.get("APP_PASSWORD", ""):
+        if st.session_state.get("password") == APP_PASSWORD:
             st.session_state["password_correct"] = True
             del st.session_state["password"]
         else:
