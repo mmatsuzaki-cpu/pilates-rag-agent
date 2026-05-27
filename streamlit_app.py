@@ -97,22 +97,27 @@ CUSTOM_CSS = """
         margin: 1.5rem auto 2.5rem auto;
     }
 
-    /* タイトル */
+    /* タイトル(ブランドロゴと統一: Cormorant Garamond + ゴールドグラデ) */
     .app-title {
         text-align: center;
-        font-family: 'Noto Serif JP', serif;
-        color: #5C4A36;
-        font-size: 1.5rem;
-        font-weight: 400;
-        letter-spacing: 0.15em;
-        margin-bottom: 0.5rem;
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.85rem;
+        font-weight: 500;
+        background: linear-gradient(90deg, #8B6F47 0%, #C9A961 50%, #8B6F47 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        letter-spacing: 0.25em;
+        line-height: 1.2;
+        margin: 0 0 0.5rem 0;
     }
     .app-subtitle {
         text-align: center;
+        font-family: 'Noto Serif JP', serif;
         color: #8B6F47;
         font-size: 0.85rem;
         margin-bottom: 2.5rem;
         font-weight: 300;
+        letter-spacing: 0.08em;
     }
 
     /* セクション見出し */
