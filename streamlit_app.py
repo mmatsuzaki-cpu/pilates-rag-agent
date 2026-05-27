@@ -77,13 +77,13 @@ CUSTOM_CSS = """
         font-family: 'Cormorant Garamond', 'Times New Roman', serif;
         font-style: italic;
         font-weight: 300;
-        font-size: 1.6rem;
-        vertical-align: 0.08em;
-        margin: 0 0.65rem;
+        font-size: 2.2rem;
+        vertical-align: -0.02em;
+        margin: 0 0.7rem;
         color: #C9A961;
         -webkit-text-fill-color: #C9A961;
         background: none;
-        opacity: 0.75;
+        opacity: 0.8;
     }
     .brand-tagline {
         text-align: center;
