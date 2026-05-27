@@ -335,40 +335,49 @@ def main():
         unsafe_allow_html=True,
     )
 
-    # 入力フォーム
+    COURSE_OPTIONS = [
+        "—",
+        "サブスク 月1", "サブスク 月2", "サブスク 月3", "サブスク 月4", "サブスク 月6",
+        "年払い 月1", "年払い 月2", "年払い 月3", "年払い 月4", "年払い 月6",
+        "整体なし 月2", "整体なし 月3", "整体なし 月4", "整体なし 月6",
+        "トライアル 2回",
+    ]
+
+    # 入会の有無 は form の外(動的にコース有効/無効を切り替えるため)
+    st.markdown('<div class="section-title">SESSION INFORMATION</div>', unsafe_allow_html=True)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        staff_name = st.text_input("スタッフ名", placeholder="例: YUKINO", key="staff_name_input")
+    with col2:
+        session_date = st.date_input("セッション日", value=date.today(), key="session_date_input")
+
+    st.markdown('<div class="section-title">CONTRACT RESULT</div>', unsafe_allow_html=True)
+    col3, col4 = st.columns(2)
+    with col3:
+        contract = st.selectbox(
+            "入会の有無",
+            ["なし", "あり"],
+            index=0,
+            help="契約成立の有無を選んでね",
+            key="contract_select",
+        )
+    with col4:
+        is_no_contract = (contract == "なし")
+        course = st.selectbox(
+            "コース(入会ありの場合のみ)",
+            COURSE_OPTIONS,
+            index=0,
+            disabled=is_no_contract,
+            help="入会ありの場合に選択",
+            key="course_select",
+        )
+    # 「なし」を選んだら course を強制的に "—"
+    if is_no_contract:
+        course = "—"
+
+    # 録音 + メモ + 送信は form 内
     with st.form("upload_form"):
-        st.markdown('<div class="section-title">SESSION INFORMATION</div>', unsafe_allow_html=True)
-
-        col1, col2 = st.columns(2)
-        with col1:
-            staff_name = st.text_input("スタッフ名", placeholder="例: YUKINO")
-        with col2:
-            session_date = st.date_input("セッション日", value=date.today())
-
-        st.markdown('<div class="section-title">CONTRACT RESULT</div>', unsafe_allow_html=True)
-        col3, col4 = st.columns(2)
-        with col3:
-            contract = st.selectbox(
-                "入会の有無",
-                ["なし", "あり"],
-                index=0,
-                help="契約成立の有無を選んでね",
-            )
-        with col4:
-            COURSE_OPTIONS = [
-                "—",
-                "サブスク 月1", "サブスク 月2", "サブスク 月3", "サブスク 月4", "サブスク 月6",
-                "年払い 月1", "年払い 月2", "年払い 月3", "年払い 月4", "年払い 月6",
-                "整体なし 月2", "整体なし 月3", "整体なし 月4", "整体なし 月6",
-                "トライアル 2回",
-            ]
-            course = st.selectbox(
-                "コース(入会ありの場合のみ)",
-                COURSE_OPTIONS,
-                index=0,
-                help="入会ありの場合に選択。なしなら「—」のまま",
-            )
-
         st.markdown('<div class="section-title">AUDIO FILE</div>', unsafe_allow_html=True)
         audio_file = st.file_uploader(
             "録音ファイル",
