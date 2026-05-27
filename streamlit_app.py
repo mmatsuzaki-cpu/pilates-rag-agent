@@ -11,7 +11,7 @@ from pathlib import Path
 
 # ── ページ設定 ─────────────────────────────────────
 st.set_page_config(
-    page_title="ピラティスFBシステム | La pilates",
+    page_title="FB SYSTEM | KOSHIKI × La pilates",
     page_icon="✦",
     layout="centered",
     initial_sidebar_state="collapsed",
@@ -64,14 +64,20 @@ CUSTOM_CSS = """
     .brand-logo {
         text-align: center;
         font-family: 'Cormorant Garamond', serif;
-        font-size: 3.5rem;
+        font-size: 2.75rem;
         font-weight: 500;
         background: linear-gradient(90deg, #8B6F47 0%, #C9A961 50%, #8B6F47 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         letter-spacing: 0.04em;
-        line-height: 1;
+        line-height: 1.15;
         margin: 0;
+    }
+    .brand-logo .multiply {
+        font-size: 1.5rem;
+        vertical-align: middle;
+        margin: 0 0.4rem;
+        opacity: 0.85;
     }
     .brand-tagline {
         text-align: center;
@@ -275,7 +281,7 @@ def render_brand_header():
         # ロゴ画像が無い場合は CSSでブランドロゴを描画
         st.markdown("""
         <div class="logo-star">✦</div>
-        <h1 class="brand-logo">La pilates</h1>
+        <h1 class="brand-logo">KOSHIKI <span class="multiply">×</span> La pilates</h1>
         <p class="brand-tagline">整体 × マシンピラティス</p>
         """, unsafe_allow_html=True)
 
@@ -323,7 +329,7 @@ def main():
     render_brand_header()
 
     # タイトル
-    st.markdown('<h2 class="app-title">FEEDBACK SYSTEM</h2>', unsafe_allow_html=True)
+    st.markdown('<h2 class="app-title">FB SYSTEM</h2>', unsafe_allow_html=True)
     st.markdown(
         '<p class="app-subtitle">カウンセリング録音をアップロード → AIが5項目評価+LINE文面を自動生成</p>',
         unsafe_allow_html=True,
@@ -355,7 +361,7 @@ def main():
             height=100,
         )
 
-        submitted = st.form_submit_button("✦  GENERATE FEEDBACK  ✦", type="primary")
+        submitted = st.form_submit_button("✦  GENERATE FB  ✦", type="primary")
 
     if submitted:
         if not staff_name:
