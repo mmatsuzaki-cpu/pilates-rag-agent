@@ -59,6 +59,7 @@ def transcribe_audio(audio_path: str) -> str:
 
 EVAL_PROMPT_TEMPLATE = """あなたはピラティススタジオ「KOSHIKI × La pilates」の教育担当として、新人スタッフのカウンセリング録音を評価します。
 
+【店舗】 {store}
 【スタッフ名】 {staff_name}
 【セッション日】 {session_date}
 【契約結果】 {contract_status}
@@ -122,7 +123,7 @@ def fetch_leader_fb_examples(transcript: str, n: int = 3) -> str:
 
 
 def call_gemini(transcript: str, staff_name: str, session_date, notes: str,
-                contract: str = "なし", course: str = "未契約") -> dict:
+                contract: str = "なし", course: str = "—", store: str = "") -> dict:
     """Gemini Flash で評価生成"""
     import google.generativeai as genai
     if not GEMINI_API_KEY:
@@ -134,12 +135,13 @@ def call_gemini(transcript: str, staff_name: str, session_date, notes: str,
     contract_status = f"🎉 契約獲得" if contract == "あり" else "🥲 契約なし(失注)"
     course_label = course if (contract == "あり" and course not in ("", "—", None)) else "(契約なし)"
     prompt = EVAL_PROMPT_TEMPLATE.format(
+        store=store or "(未指定)",
         staff_name=staff_name,
         session_date=session_date,
         contract_status=contract_status,
         course_label=course_label,
         notes=notes or "(なし)",
-        transcript=transcript[:8000],  # 長すぎる場合カット
+        transcript=transcript[:8000],
         leader_fb_examples=leader_fb,
     )
 
@@ -185,8 +187,11 @@ def send_slack_notifications(staff_name: str, session_date, result: dict):
     session_summary = result.get("session_summary", "(要約なし)")
 
     # ② チャンネル投稿(振り返り内容 + FB が1つにまとまった形)
+    store = result.get("store", "")
+    store_line = f"🏠 {store}店  " if store else ""
     channel_msg = (
-        f"🎤 *新規カウンセリング振り返り*: {staff_name} さん({session_date})\n"
+        f"🎤 *新規カウンセリング振り返り*\n"
+        f"{store_line}👤 {staff_name} さん  📅 {session_date}\n"
         f"{contract_line}\n\n"
         f"━━━━━━━━━━━━━━\n"
         f"📝 *振り返り内容*\n"
@@ -214,11 +219,12 @@ def send_slack_notifications(staff_name: str, session_date, result: dict):
 # ── メイン関数 ────────────────────────────────────
 
 def analyze_session(audio_file, staff_name: str, session_date, notes: str = "",
-                    contract: str = "なし", course: str = "未契約") -> dict:
+                    contract: str = "なし", course: str = "—", store: str = "") -> dict:
     """Streamlit から呼ばれるメインエントリ
     audio_file: streamlit UploadedFile
     contract: 契約結果("あり" / "なし")
-    course: コース名(月3, 月4, 月8, 月12, 年払い, その他, 未契約)
+    course: コース名(サブスク月X / 年払い月X / 整体なし月X / トライアル2回 / —)
+    store: 店舗(川越/大宮/高崎/神戸元町/西宮北口/所沢/浦和)
     """
     # 1. 一時ファイル保存
     suffix = "." + audio_file.name.rsplit(".", 1)[-1]
@@ -230,11 +236,12 @@ def analyze_session(audio_file, staff_name: str, session_date, notes: str = "",
         # 2. 文字起こし
         transcript = transcribe_audio(tmp_path)
 
-        # 3. Gemini で評価(契約状況含む)
-        result = call_gemini(transcript, staff_name, session_date, notes, contract, course)
+        # 3. Gemini で評価(店舗・契約状況含む)
+        result = call_gemini(transcript, staff_name, session_date, notes, contract, course, store)
         result["transcript"] = transcript
         result["contract"] = contract
         result["course"] = course
+        result["store"] = store
 
         # 4. Slack通知
         send_slack_notifications(staff_name, session_date, result)

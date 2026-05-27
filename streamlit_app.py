@@ -346,11 +346,14 @@ def main():
     # 入会の有無 は form の外(動的にコース有効/無効を切り替えるため)
     st.markdown('<div class="section-title">SESSION INFORMATION</div>', unsafe_allow_html=True)
 
+    STORE_OPTIONS = ["川越", "大宮", "高崎", "神戸元町", "西宮北口", "所沢", "浦和"]
+
     col1, col2 = st.columns(2)
     with col1:
-        staff_name = st.text_input("スタッフ名", placeholder="例: YUKINO", key="staff_name_input")
+        store = st.selectbox("店舗", STORE_OPTIONS, index=0, key="store_select")
     with col2:
-        session_date = st.date_input("セッション日", value=date.today(), key="session_date_input")
+        staff_name = st.text_input("スタッフ名", placeholder="例: YUKINO", key="staff_name_input")
+    session_date = st.date_input("セッション日", value=date.today(), key="session_date_input")
 
     st.markdown('<div class="section-title">CONTRACT RESULT</div>', unsafe_allow_html=True)
     col3, col4 = st.columns(2)
@@ -410,7 +413,7 @@ def main():
             try:
                 result = analyze_session(
                     audio_file, staff_name, session_date, notes,
-                    contract=contract, course=course,
+                    contract=contract, course=course, store=store,
                 )
             except Exception as e:
                 st.error(f"処理失敗💦 {e}")
