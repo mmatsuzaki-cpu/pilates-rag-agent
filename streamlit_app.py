@@ -345,6 +345,23 @@ def main():
         with col2:
             session_date = st.date_input("セッション日", value=date.today())
 
+        st.markdown('<div class="section-title">CONTRACT RESULT</div>', unsafe_allow_html=True)
+        col3, col4 = st.columns(2)
+        with col3:
+            contract = st.selectbox(
+                "入会の有無",
+                ["なし", "あり"],
+                index=0,
+                help="契約成立の有無を選んでね",
+            )
+        with col4:
+            course = st.selectbox(
+                "コース(入会ありの場合)",
+                ["未契約", "月3", "月4", "月8", "月12", "年払い", "その他"],
+                index=0,
+                help="入会ありの場合に選択。なしなら未契約のまま",
+            )
+
         st.markdown('<div class="section-title">AUDIO FILE</div>', unsafe_allow_html=True)
         audio_file = st.file_uploader(
             "録音ファイル",
@@ -375,7 +392,10 @@ def main():
         from coaching.coaching_analyzer import analyze_session
         with st.spinner("文字起こし + AI評価中...  1〜2分かかります"):
             try:
-                result = analyze_session(audio_file, staff_name, session_date, notes)
+                result = analyze_session(
+                    audio_file, staff_name, session_date, notes,
+                    contract=contract, course=course,
+                )
             except Exception as e:
                 st.error(f"処理失敗💦 {e}")
                 return

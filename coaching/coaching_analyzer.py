@@ -57,10 +57,12 @@ def transcribe_audio(audio_path: str) -> str:
 
 # ── 2. AI評価 + FB生成(Gemini Flash) ──────────────
 
-EVAL_PROMPT_TEMPLATE = """あなたはピラティススタジオの教育担当として、新人スタッフのカウンセリング録音を評価します。
+EVAL_PROMPT_TEMPLATE = """あなたはピラティススタジオ「KOSHIKI × La pilates」の教育担当として、新人スタッフのカウンセリング録音を評価します。
 
 【スタッフ名】 {staff_name}
 【セッション日】 {session_date}
+【契約結果】 {contract_status}
+【コース】 {course_label}
 【メモ】 {notes}
 
 【カウンセリング録音(文字起こし)】
@@ -75,12 +77,16 @@ EVAL_PROMPT_TEMPLATE = """あなたはピラティススタジオの教育担当
 3. クロージング: 契約決断のサポート、不安解消、期限提示
 4. トーン: 寄り添い方、話し方、聞きやすさ
 
+【FB視点の使い分け】
+- 契約「あり」の場合 → 「定着サポート視点」(継続モチベ・次回ゴール・効果実感の引き出し方)
+- 契約「なし」の場合 → 「失注分析視点」(何が決め手にならなかったか、次回どう改善するか)
+
 【出力形式(JSON厳守)】
 {{
   "scores": {{"hearing": <int>, "proposal": <int>, "closing": <int>, "tone": <int>}},
   "good_points": "<良かったポイントを具体的に3つ箇条書き(マークダウン)>",
   "improvements": "<改善点を具体的に2つ箇条書き(マークダウン)>",
-  "line_message": "<スタッフ本人に送るLINE文面。冒頭「○○さんお疲れさまです😊」で始める。300字程度。励まし含む>"
+  "line_message": "<スタッフ本人に送るLINE文面。冒頭「○○さんお疲れさまです😊」で始める。契約あり=入会お祝い+定着サポート視点、契約なし=次に活かす視点で励ます。300字程度>"
 }}
 
 JSONのみ出力。コメントや説明は不要。
@@ -115,7 +121,8 @@ def fetch_leader_fb_examples(transcript: str, n: int = 3) -> str:
         return f"(取得失敗: {e})"
 
 
-def call_gemini(transcript: str, staff_name: str, session_date, notes: str) -> dict:
+def call_gemini(transcript: str, staff_name: str, session_date, notes: str,
+                contract: str = "なし", course: str = "未契約") -> dict:
     """Gemini Flash で評価生成"""
     import google.generativeai as genai
     if not GEMINI_API_KEY:
@@ -124,9 +131,13 @@ def call_gemini(transcript: str, staff_name: str, session_date, notes: str) -> d
     model = genai.GenerativeModel("gemini-2.5-flash")
 
     leader_fb = fetch_leader_fb_examples(transcript)
+    contract_status = f"🎉 契約獲得" if contract == "あり" else "🥲 契約なし(失注)"
+    course_label = course if contract == "あり" else "(未契約)"
     prompt = EVAL_PROMPT_TEMPLATE.format(
         staff_name=staff_name,
         session_date=session_date,
+        contract_status=contract_status,
+        course_label=course_label,
         notes=notes or "(なし)",
         transcript=transcript[:8000],  # 長すぎる場合カット
         leader_fb_examples=leader_fb,
@@ -161,9 +172,18 @@ def send_slack_notifications(staff_name: str, session_date, result: dict):
     avg = sum(scores.values()) / max(len(scores), 1)
     star_line = f"ヒアリング★{scores.get('hearing',0)} / 提案★{scores.get('proposal',0)} / クロージング★{scores.get('closing',0)} / トーン★{scores.get('tone',0)}"
 
+    # 契約結果の表示
+    contract = result.get("contract", "なし")
+    course = result.get("course", "未契約")
+    if contract == "あり":
+        contract_line = f"🎉 *契約獲得* ({course})"
+    else:
+        contract_line = "🥲 契約なし"
+
     # ② チャンネル投稿
     channel_msg = (
-        f"🎤 *育成FB完了*: {staff_name} さん({session_date})\n\n"
+        f"🎤 *育成FB完了*: {staff_name} さん({session_date})\n"
+        f"{contract_line}\n\n"
         f"📊 平均★{avg:.1f}/5\n"
         f"{star_line}\n\n"
         f"💎 *良かった点*\n{result.get('good_points', '')}\n\n"
@@ -185,9 +205,12 @@ def send_slack_notifications(staff_name: str, session_date, result: dict):
 
 # ── メイン関数 ────────────────────────────────────
 
-def analyze_session(audio_file, staff_name: str, session_date, notes: str = "") -> dict:
+def analyze_session(audio_file, staff_name: str, session_date, notes: str = "",
+                    contract: str = "なし", course: str = "未契約") -> dict:
     """Streamlit から呼ばれるメインエントリ
     audio_file: streamlit UploadedFile
+    contract: 契約結果("あり" / "なし")
+    course: コース名(月3, 月4, 月8, 月12, 年払い, その他, 未契約)
     """
     # 1. 一時ファイル保存
     suffix = "." + audio_file.name.rsplit(".", 1)[-1]
@@ -199,9 +222,11 @@ def analyze_session(audio_file, staff_name: str, session_date, notes: str = "") 
         # 2. 文字起こし
         transcript = transcribe_audio(tmp_path)
 
-        # 3. Gemini で評価
-        result = call_gemini(transcript, staff_name, session_date, notes)
+        # 3. Gemini で評価(契約状況含む)
+        result = call_gemini(transcript, staff_name, session_date, notes, contract, course)
         result["transcript"] = transcript
+        result["contract"] = contract
+        result["course"] = course
 
         # 4. Slack通知
         send_slack_notifications(staff_name, session_date, result)
