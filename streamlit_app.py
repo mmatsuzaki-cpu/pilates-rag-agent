@@ -74,14 +74,16 @@ CUSTOM_CSS = """
         margin: 0;
     }
     .brand-logo .multiply {
-        font-family: 'Noto Sans JP', sans-serif;
-        font-size: 1.5rem;
-        vertical-align: middle;
-        margin: 0 0.4rem;
-        color: #8B6F47;
-        -webkit-text-fill-color: #8B6F47;
-        background: none;
+        font-family: 'Cormorant Garamond', 'Times New Roman', serif;
+        font-style: italic;
         font-weight: 300;
+        font-size: 1.6rem;
+        vertical-align: 0.08em;
+        margin: 0 0.65rem;
+        color: #C9A961;
+        -webkit-text-fill-color: #C9A961;
+        background: none;
+        opacity: 0.75;
     }
     .brand-tagline {
         text-align: center;
