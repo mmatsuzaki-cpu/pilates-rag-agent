@@ -85,6 +85,21 @@ CUSTOM_CSS = """
         background: none;
         opacity: 0.8;
     }
+    /* スマホでは3行に分けて見やすく */
+    @media (max-width: 640px) {
+        .brand-logo {
+            font-size: 2.1rem;
+            line-height: 1.25;
+        }
+        .brand-logo .brand-part,
+        .brand-logo .multiply {
+            display: block;
+        }
+        .brand-logo .multiply {
+            margin: 0.1rem auto;
+            font-size: 1.5rem;
+        }
+    }
     .brand-tagline {
         text-align: center;
         font-family: 'Noto Serif JP', serif;
@@ -124,6 +139,49 @@ CUSTOM_CSS = """
         margin-bottom: 2.5rem;
         font-weight: 300;
         letter-spacing: 0.08em;
+    }
+
+    /* フロー(録音アップ → AI評価+FB生成) */
+    .app-flow {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.75rem;
+        margin: 0.5rem auto 2.5rem auto;
+        flex-wrap: wrap;
+    }
+    .app-flow-step {
+        background: linear-gradient(135deg, rgba(201,169,97,0.08) 0%, rgba(139,111,71,0.06) 100%);
+        border: 1px solid rgba(201, 169, 97, 0.3);
+        color: #5C4A36;
+        font-family: 'Noto Serif JP', serif;
+        padding: 0.6rem 1.15rem;
+        border-radius: 999px;
+        font-size: 0.82rem;
+        letter-spacing: 0.05em;
+        font-weight: 400;
+        white-space: nowrap;
+        box-shadow: 0 2px 8px rgba(139, 111, 71, 0.05);
+    }
+    .app-flow-arrow {
+        color: #C9A961;
+        font-size: 1.2rem;
+        font-family: 'Cormorant Garamond', serif;
+        font-weight: 300;
+    }
+    @media (max-width: 640px) {
+        .app-flow {
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+        .app-flow-arrow {
+            transform: rotate(90deg);
+            margin: 0.1rem 0;
+        }
+        .app-flow-step {
+            width: 100%;
+            text-align: center;
+        }
     }
 
     /* セクション見出し */
@@ -291,7 +349,7 @@ def render_brand_header():
     else:
         # ロゴ画像が無い場合は CSSでブランドロゴを描画
         st.markdown("""
-        <h1 class="brand-logo">KOSHIKI <span class="multiply">×</span> La pilates</h1>
+        <h1 class="brand-logo"><span class="brand-part">KOSHIKI</span><span class="multiply">×</span><span class="brand-part">La pilates</span></h1>
         """, unsafe_allow_html=True)
 
     st.markdown('<div class="brand-divider"></div>', unsafe_allow_html=True)
@@ -354,7 +412,13 @@ def main():
     # タイトル
     st.markdown('<h2 class="app-title">FB SYSTEM</h2>', unsafe_allow_html=True)
     st.markdown(
-        '<p class="app-subtitle">カウンセリング録音をアップロード → AIが評価+FBを自動生成</p>',
+        """
+        <div class="app-flow">
+            <div class="app-flow-step">🎤 カウンセリング録音をアップロード</div>
+            <div class="app-flow-arrow">→</div>
+            <div class="app-flow-step">✨ AIが評価 + FBを自動生成</div>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
