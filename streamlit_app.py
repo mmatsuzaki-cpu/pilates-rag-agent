@@ -352,7 +352,7 @@ def main():
     with col1:
         store = st.selectbox("店舗", STORE_OPTIONS, index=0, key="store_select")
     with col2:
-        staff_name = st.text_input("スタッフ名", placeholder="例: YUKINO", key="staff_name_input")
+        staff_name = st.text_input("スタッフ名", placeholder="例: MIRAI", key="staff_name_input")
     session_date = st.date_input("セッション日", value=date.today(), key="session_date_input")
 
     st.markdown('<div class="section-title">CONTRACT RESULT</div>', unsafe_allow_html=True)
