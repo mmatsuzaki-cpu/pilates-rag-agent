@@ -1,4 +1,4 @@
-"""streamlit_app.py - ピラティスFBシステム(Studio Coach風)
+"""streamlit_app.py - ピラティスFBシステム(La pilates ブランドデザイン)
 
 Streamlit Cloud のエントリポイント。
 カウンセリング録音をアップロード → 文字起こし → AI評価 → 育成FB生成。
@@ -6,34 +6,39 @@ Streamlit Cloud のエントリポイント。
 
 import streamlit as st
 from datetime import date
+from pathlib import Path
 
 
-# ── ページ設定(最初に1回だけ) ─────────────────────
+# ── ページ設定 ─────────────────────────────────────
 st.set_page_config(
-    page_title="ピラティスFBシステム",
-    page_icon="🧘‍♀️",
+    page_title="ピラティスFBシステム | La pilates",
+    page_icon="✦",
     layout="centered",
     initial_sidebar_state="collapsed",
 )
 
 
-# ── カスタムCSS ──────────────────────────────────
+# ── La pilates ブランドCSS ──────────────────────────
+# カラーパレット:
+#   ブラウン      #8B6F47
+#   ダークブラウン #5C4A36
+#   ゴールド      #C9A961
+#   ベージュ      #F5EFE5
+#   アイボリー    #FBF8F2
 CUSTOM_CSS = """
 <style>
-    /* Streamlitヘッダー非表示 */
-    [data-testid="stHeader"] {
-        background: transparent;
-        height: 0;
-    }
-    [data-testid="stToolbar"] {
-        display: none;
-    }
-    footer {visibility: hidden;}
-    #MainMenu {visibility: hidden;}
+    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Noto+Serif+JP:wght@300;400;500;700&family=Noto+Sans+JP:wght@300;400;500;700&display=swap');
 
-    /* 全体背景 */
+    /* Streamlitヘッダー非表示 */
+    [data-testid="stHeader"] { background: transparent; height: 0; }
+    [data-testid="stToolbar"] { display: none; }
+    footer { visibility: hidden; }
+    #MainMenu { visibility: hidden; }
+
+    /* 全体背景: アイボリー */
     .stApp {
-        background: linear-gradient(135deg, #f7f9fa 0%, #e8f4f1 50%, #f0f7f3 100%);
+        background: linear-gradient(180deg, #FBF8F2 0%, #F5EFE5 100%);
+        font-family: 'Noto Sans JP', sans-serif;
     }
 
     /* メインコンテナ */
@@ -43,191 +48,238 @@ CUSTOM_CSS = """
         padding-bottom: 4rem;
     }
 
-    /* タイトルヒーロー */
-    .hero {
-        background: linear-gradient(135deg, #2D7A6A 0%, #1a4d44 100%);
-        color: white;
-        padding: 2.5rem 2rem;
-        border-radius: 20px;
-        margin-bottom: 2rem;
+    /* ロゴ星 */
+    .logo-star {
         text-align: center;
-        box-shadow: 0 12px 36px rgba(45, 122, 106, 0.25);
-        position: relative;
-        overflow: hidden;
+        font-family: serif;
+        font-size: 3rem;
+        background: linear-gradient(135deg, #C9A961 0%, #8B6F47 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        line-height: 1;
+        margin-bottom: 0.5rem;
     }
-    .hero::before {
-        content: '';
-        position: absolute;
-        top: -50%;
-        right: -10%;
-        width: 200px;
-        height: 200px;
-        background: rgba(255,255,255,0.05);
-        border-radius: 50%;
-    }
-    .hero::after {
-        content: '';
-        position: absolute;
-        bottom: -30%;
-        left: -10%;
-        width: 150px;
-        height: 150px;
-        background: rgba(255,255,255,0.05);
-        border-radius: 50%;
-    }
-    .hero h1 {
-        margin: 0;
-        font-size: 2rem;
-        font-weight: 700;
-        letter-spacing: -0.02em;
-        position: relative;
-        z-index: 1;
-    }
-    .hero p {
-        margin: 0.75rem 0 0 0;
-        opacity: 0.92;
-        font-size: 0.95rem;
-        position: relative;
-        z-index: 1;
-    }
-    .hero-badge {
-        display: inline-block;
-        background: rgba(255,255,255,0.18);
-        backdrop-filter: blur(10px);
-        padding: 0.3rem 1rem;
-        border-radius: 100px;
-        font-size: 0.78rem;
-        margin-top: 1rem;
+
+    /* ブランドロゴ */
+    .brand-logo {
+        text-align: center;
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 3.5rem;
         font-weight: 500;
-        position: relative;
-        z-index: 1;
+        background: linear-gradient(90deg, #8B6F47 0%, #C9A961 50%, #8B6F47 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        letter-spacing: 0.04em;
+        line-height: 1;
+        margin: 0;
+    }
+    .brand-tagline {
+        text-align: center;
+        font-family: 'Noto Serif JP', serif;
+        color: #8B6F47;
+        font-size: 0.95rem;
+        letter-spacing: 0.5em;
+        font-weight: 300;
+        margin-top: 0.75rem;
+    }
+
+    /* ロゴ区切り線 */
+    .brand-divider {
+        width: 60px;
+        height: 1px;
+        background: linear-gradient(90deg, transparent 0%, #C9A961 50%, transparent 100%);
+        margin: 1.5rem auto 2.5rem auto;
+    }
+
+    /* タイトル */
+    .app-title {
+        text-align: center;
+        font-family: 'Noto Serif JP', serif;
+        color: #5C4A36;
+        font-size: 1.5rem;
+        font-weight: 400;
+        letter-spacing: 0.15em;
+        margin-bottom: 0.5rem;
+    }
+    .app-subtitle {
+        text-align: center;
+        color: #8B6F47;
+        font-size: 0.85rem;
+        margin-bottom: 2.5rem;
+        font-weight: 300;
     }
 
     /* セクション見出し */
     .section-title {
-        font-size: 1.15rem;
-        font-weight: 600;
-        color: #1a4d44;
+        font-family: 'Noto Serif JP', serif;
+        font-size: 0.95rem;
+        font-weight: 500;
+        color: #5C4A36;
         margin: 1.5rem 0 0.75rem 0;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid rgba(201, 169, 97, 0.25);
+        letter-spacing: 0.08em;
     }
 
     /* フォームカード */
     div[data-testid="stForm"] {
-        background: white;
-        padding: 2rem !important;
-        border-radius: 20px;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.06);
-        border: 1px solid rgba(45, 122, 106, 0.08);
+        background: #FBFAF6;
+        padding: 2.5rem !important;
+        border-radius: 4px;
+        box-shadow: 0 4px 24px rgba(139, 111, 71, 0.08);
+        border: 1px solid rgba(201, 169, 97, 0.15);
     }
 
     /* プライマリボタン */
     .stButton button[kind="primary"],
     .stFormSubmitButton button {
-        background: linear-gradient(135deg, #2D7A6A 0%, #1a4d44 100%) !important;
-        color: white !important;
+        background: linear-gradient(135deg, #8B6F47 0%, #5C4A36 100%) !important;
+        color: #FBF8F2 !important;
         border: none !important;
-        padding: 0.85rem 2rem !important;
-        border-radius: 12px !important;
-        font-weight: 600 !important;
-        font-size: 1rem !important;
+        padding: 0.9rem 2rem !important;
+        border-radius: 2px !important;
+        font-weight: 500 !important;
+        font-size: 0.95rem !important;
+        font-family: 'Noto Serif JP', serif !important;
+        letter-spacing: 0.15em !important;
         width: 100% !important;
-        transition: all 0.25s !important;
-        box-shadow: 0 6px 18px rgba(45, 122, 106, 0.3) !important;
+        transition: all 0.3s !important;
+        box-shadow: 0 4px 12px rgba(139, 111, 71, 0.2) !important;
     }
     .stButton button[kind="primary"]:hover,
     .stFormSubmitButton button:hover {
-        transform: translateY(-2px) !important;
-        box-shadow: 0 10px 24px rgba(45, 122, 106, 0.4) !important;
+        background: linear-gradient(135deg, #5C4A36 0%, #8B6F47 100%) !important;
+        transform: translateY(-1px) !important;
+        box-shadow: 0 8px 20px rgba(139, 111, 71, 0.3) !important;
     }
 
     /* 入力欄 */
     .stTextInput input,
     .stTextArea textarea,
     .stDateInput input {
-        border-radius: 12px !important;
-        border: 1.5px solid rgba(0,0,0,0.08) !important;
-        padding: 0.65rem 0.9rem !important;
+        border-radius: 2px !important;
+        border: 1px solid rgba(139, 111, 71, 0.2) !important;
+        padding: 0.75rem 0.9rem !important;
         transition: all 0.2s !important;
+        background: #FFFFFF !important;
+        font-family: 'Noto Sans JP', sans-serif !important;
     }
     .stTextInput input:focus,
     .stTextArea textarea:focus,
     .stDateInput input:focus {
-        border-color: #2D7A6A !important;
-        box-shadow: 0 0 0 3px rgba(45, 122, 106, 0.1) !important;
+        border-color: #C9A961 !important;
+        box-shadow: 0 0 0 3px rgba(201, 169, 97, 0.15) !important;
     }
-    label {
+    label, .stTextInput label, .stTextArea label, .stDateInput label {
+        font-family: 'Noto Serif JP', serif !important;
         font-weight: 500 !important;
-        color: #374151 !important;
+        color: #5C4A36 !important;
+        font-size: 0.9rem !important;
+        letter-spacing: 0.05em !important;
     }
 
     /* ファイルアップローダー */
     [data-testid="stFileUploaderDropzone"] {
-        background: linear-gradient(135deg, rgba(45,122,106,0.04) 0%, rgba(45,122,106,0.08) 100%);
-        border: 2px dashed rgba(45, 122, 106, 0.35) !important;
-        border-radius: 16px !important;
+        background: linear-gradient(135deg, rgba(201,169,97,0.04) 0%, rgba(139,111,71,0.06) 100%);
+        border: 1px dashed rgba(139, 111, 71, 0.3) !important;
+        border-radius: 4px !important;
         transition: all 0.25s !important;
     }
     [data-testid="stFileUploaderDropzone"]:hover {
-        border-color: rgba(45, 122, 106, 0.6) !important;
-        background: rgba(45, 122, 106, 0.06);
+        border-color: #C9A961 !important;
+        background: rgba(201, 169, 97, 0.06);
     }
 
     /* メトリクス */
     [data-testid="stMetric"] {
-        background: white;
+        background: #FBFAF6;
         padding: 1.25rem 1rem;
-        border-radius: 14px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-        border: 1px solid rgba(45, 122, 106, 0.08);
+        border-radius: 4px;
+        box-shadow: 0 2px 8px rgba(139, 111, 71, 0.06);
+        border: 1px solid rgba(201, 169, 97, 0.15);
         text-align: center;
     }
     [data-testid="stMetricLabel"] {
-        font-size: 0.85rem;
-        color: #6b7280;
-        font-weight: 500;
+        font-family: 'Noto Serif JP', serif;
+        font-size: 0.8rem;
+        color: #8B6F47;
+        font-weight: 400;
+        letter-spacing: 0.1em;
     }
     [data-testid="stMetricValue"] {
-        font-size: 1.5rem;
-        color: #2D7A6A;
-        font-weight: 700;
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.75rem;
+        color: #8B6F47;
+        font-weight: 600;
     }
 
     /* 結果カード */
     .result-card {
-        background: white;
+        background: #FBFAF6;
         padding: 1.5rem 1.75rem;
-        border-radius: 16px;
-        margin: 1rem 0;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.05);
-        border-left: 4px solid #2D7A6A;
+        border-radius: 4px;
+        margin: 0.75rem 0;
+        box-shadow: 0 2px 12px rgba(139, 111, 71, 0.06);
+        border-left: 3px solid #C9A961;
+        font-family: 'Noto Sans JP', sans-serif;
+        color: #5C4A36;
+        line-height: 1.8;
     }
-    .result-card.good { border-left-color: #10b981; }
-    .result-card.warn { border-left-color: #f59e0b; }
-    .result-card.line { border-left-color: #6366f1; }
+    .result-card.good { border-left-color: #C9A961; }
+    .result-card.warn { border-left-color: #B89968; }
+    .result-card.line { border-left-color: #8B6F47; }
+
+    /* code(LINE文面) */
+    code, pre {
+        font-family: 'Noto Sans JP', sans-serif !important;
+        background: #FBFAF6 !important;
+        color: #5C4A36 !important;
+        border: 1px solid rgba(201, 169, 97, 0.2) !important;
+        border-radius: 4px !important;
+    }
 
     /* divider */
     hr {
-        border-color: rgba(45, 122, 106, 0.15) !important;
+        border: none !important;
+        height: 1px !important;
+        background: linear-gradient(90deg, transparent 0%, rgba(201,169,97,0.4) 50%, transparent 100%) !important;
         margin: 2rem 0 !important;
     }
 
-    /* パスワード入力欄(ログイン時) */
-    .login-card {
-        background: white;
-        padding: 2.5rem;
-        border-radius: 20px;
+    /* ログイン画面 */
+    .login-wrapper {
         max-width: 420px;
-        margin: 4rem auto;
-        box-shadow: 0 12px 36px rgba(0,0,0,0.1);
+        margin: 5rem auto 0 auto;
         text-align: center;
     }
 </style>
 """
 
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+
+
+# ── ロゴ表示 ──────────────────────────────────────
+ASSETS_DIR = Path(__file__).parent / "assets"
+LOGO_PATH = ASSETS_DIR / "logo.png"
+
+
+def render_brand_header():
+    """La pilates ブランドヘッダー
+    ロゴ画像が assets/logo.png にあればそれを表示、なければ CSS版を表示
+    """
+    if LOGO_PATH.exists():
+        col_l, col_c, col_r = st.columns([1, 2, 1])
+        with col_c:
+            st.image(str(LOGO_PATH), use_container_width=True)
+    else:
+        # ロゴ画像が無い場合は CSSでブランドロゴを描画
+        st.markdown("""
+        <div class="logo-star">✦</div>
+        <h1 class="brand-logo">La pilates</h1>
+        <p class="brand-tagline">整体 × マシンピラティス</p>
+        """, unsafe_allow_html=True)
+
+    st.markdown('<div class="brand-divider"></div>', unsafe_allow_html=True)
 
 
 # ── パスワード認証 ────────────────────────────────────
@@ -244,17 +296,20 @@ def check_password():
     if st.session_state.get("password_correct", False):
         return True
 
+    st.markdown('<div class="login-wrapper">', unsafe_allow_html=True)
+    render_brand_header()
     st.markdown(
-        '<div style="text-align:center; margin-top:4rem;">'
-        '<h1 style="color:#2D7A6A; font-size:2.5rem; margin-bottom:0.5rem;">🔒</h1>'
-        '<h2 style="color:#1a4d44; font-weight:600;">ピラティスFBシステム</h2>'
-        '<p style="color:#6b7280;">パスワードを入力してください</p>'
-        '</div>',
+        '<p class="app-subtitle">パスワードを入力してください</p>',
         unsafe_allow_html=True,
     )
-    st.text_input("パスワード", type="password", on_change=password_entered, key="password", label_visibility="collapsed")
+    st.text_input(
+        "パスワード", type="password", on_change=password_entered,
+        key="password", label_visibility="collapsed",
+        placeholder="パスワード",
+    )
     if "password_correct" in st.session_state and not st.session_state["password_correct"]:
-        st.error("❌ パスワードが違うょ💦")
+        st.error("パスワードが違います")
+    st.markdown('</div>', unsafe_allow_html=True)
     return False
 
 
@@ -264,34 +319,35 @@ def main():
     if not check_password():
         st.stop()
 
-    # ヒーローセクション
-    st.markdown("""
-    <div class="hero">
-        <h1>🧘‍♀️ ピラティスFBシステム</h1>
-        <p>カウンセリング録音をアップロード → AIが5項目評価+LINE文面を自動生成</p>
-        <span class="hero-badge">✨ AI Powered</span>
-    </div>
-    """, unsafe_allow_html=True)
+    # ブランドヘッダー
+    render_brand_header()
+
+    # タイトル
+    st.markdown('<h2 class="app-title">FEEDBACK SYSTEM</h2>', unsafe_allow_html=True)
+    st.markdown(
+        '<p class="app-subtitle">カウンセリング録音をアップロード → AIが5項目評価+LINE文面を自動生成</p>',
+        unsafe_allow_html=True,
+    )
 
     # 入力フォーム
     with st.form("upload_form"):
-        st.markdown('<div class="section-title">📋 セッション情報</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">SESSION INFORMATION</div>', unsafe_allow_html=True)
 
         col1, col2 = st.columns(2)
         with col1:
-            staff_name = st.text_input("👤 スタッフ名", placeholder="例: YUKINO")
+            staff_name = st.text_input("スタッフ名", placeholder="例: YUKINO")
         with col2:
-            session_date = st.date_input("📅 セッション日", value=date.today())
+            session_date = st.date_input("セッション日", value=date.today())
 
-        st.markdown('<div class="section-title">🎤 録音ファイル</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">AUDIO FILE</div>', unsafe_allow_html=True)
         audio_file = st.file_uploader(
-            "アップロード",
+            "録音ファイル",
             type=["m4a", "mp3", "wav", "mp4", "aac"],
             label_visibility="collapsed",
             help="新規カウンセリング・体験レッスン・クロージングの録音",
         )
 
-        st.markdown('<div class="section-title">📝 メモ(任意)</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">NOTES (OPTIONAL)</div>', unsafe_allow_html=True)
         notes = st.text_area(
             "メモ",
             placeholder="お客様の属性メモ等(あれば)",
@@ -299,7 +355,7 @@ def main():
             height=100,
         )
 
-        submitted = st.form_submit_button("✨ フィードバックを生成する", type="primary")
+        submitted = st.form_submit_button("✦  GENERATE FEEDBACK  ✦", type="primary")
 
     if submitted:
         if not staff_name:
@@ -311,39 +367,38 @@ def main():
 
         # 処理
         from coaching.coaching_analyzer import analyze_session
-        with st.spinner("🎙️ 文字起こし + AI評価中... 1〜2分かかるょ💕"):
+        with st.spinner("文字起こし + AI評価中...  1〜2分かかります"):
             try:
                 result = analyze_session(audio_file, staff_name, session_date, notes)
             except Exception as e:
                 st.error(f"処理失敗💦 {e}")
                 return
 
-        st.balloons()
-        st.success("✨ フィードバック生成完了!")
+        st.success("✦ フィードバック生成完了")
 
-        # スコア表示
-        st.markdown('<div class="section-title">📊 評価</div>', unsafe_allow_html=True)
+        # スコア
+        st.markdown('<div class="section-title">EVALUATION</div>', unsafe_allow_html=True)
         scores = result.get("scores", {})
         col_a, col_b, col_c, col_d = st.columns(4)
-        with col_a: st.metric("ヒアリング", f"★ {scores.get('hearing', 0)}/5")
-        with col_b: st.metric("提案",     f"★ {scores.get('proposal', 0)}/5")
-        with col_c: st.metric("クロージング", f"★ {scores.get('closing', 0)}/5")
-        with col_d: st.metric("トーン",   f"★ {scores.get('tone', 0)}/5")
+        with col_a: st.metric("HEARING",  f"{scores.get('hearing', 0)} / 5")
+        with col_b: st.metric("PROPOSAL", f"{scores.get('proposal', 0)} / 5")
+        with col_c: st.metric("CLOSING",  f"{scores.get('closing', 0)} / 5")
+        with col_d: st.metric("TONE",     f"{scores.get('tone', 0)} / 5")
 
         # 良かったポイント
-        st.markdown('<div class="section-title">💎 良かったポイント</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">STRENGTHS</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="result-card good">{result.get("good_points", "(なし)")}</div>', unsafe_allow_html=True)
 
         # 改善点
-        st.markdown('<div class="section-title">🎯 改善点</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">IMPROVEMENTS</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="result-card warn">{result.get("improvements", "(なし)")}</div>', unsafe_allow_html=True)
 
         # LINE用文面
-        st.markdown('<div class="section-title">📩 LINE用文面(コピペ可)</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">LINE MESSAGE</div>', unsafe_allow_html=True)
         st.code(result.get("line_message", ""), language="text")
 
         st.divider()
-        st.caption("📡 Slack/Notion 通知も自動送信されたょ✨")
+        st.caption("Slack / Notion 通知は自動で送信されました")
 
 
 if __name__ == "__main__":
