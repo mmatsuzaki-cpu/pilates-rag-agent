@@ -132,7 +132,7 @@ def call_gemini(transcript: str, staff_name: str, session_date, notes: str,
 
     leader_fb = fetch_leader_fb_examples(transcript)
     contract_status = f"🎉 契約獲得" if contract == "あり" else "🥲 契約なし(失注)"
-    course_label = course if contract == "あり" else "(未契約)"
+    course_label = course if (contract == "あり" and course not in ("", "—", None)) else "(契約なし)"
     prompt = EVAL_PROMPT_TEMPLATE.format(
         staff_name=staff_name,
         session_date=session_date,
@@ -174,9 +174,11 @@ def send_slack_notifications(staff_name: str, session_date, result: dict):
 
     # 契約結果の表示
     contract = result.get("contract", "なし")
-    course = result.get("course", "未契約")
-    if contract == "あり":
+    course = result.get("course", "—")
+    if contract == "あり" and course not in ("", "—", None):
         contract_line = f"🎉 *契約獲得* ({course})"
+    elif contract == "あり":
+        contract_line = "🎉 *契約獲得*"
     else:
         contract_line = "🥲 契約なし"
 
