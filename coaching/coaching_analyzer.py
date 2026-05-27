@@ -84,9 +84,9 @@ EVAL_PROMPT_TEMPLATE = """あなたはピラティススタジオ「KOSHIKI × L
 【出力形式(JSON厳守)】
 {{
   "scores": {{"hearing": <int>, "proposal": <int>, "closing": <int>, "tone": <int>}},
+  "session_summary": "<カウンセリング録音の要約(お客様の年齢/職業/主訴/提案内容/お客様の反応の流れを箇条書きで200〜400字程度・マークダウン)>",
   "good_points": "<良かったポイントを具体的に3つ箇条書き(マークダウン)>",
-  "improvements": "<改善点を具体的に2つ箇条書き(マークダウン)>",
-  "line_message": "<スタッフ本人に送るLINE文面。冒頭「○○さんお疲れさまです😊」で始める。契約あり=入会お祝い+定着サポート視点、契約なし=次に活かす視点で励ます。300字程度>"
+  "improvements": "<改善点を具体的に2つ箇条書き(マークダウン)>"
 }}
 
 JSONのみ出力。コメントや説明は不要。
@@ -180,11 +180,17 @@ def send_slack_notifications(staff_name: str, session_date, result: dict):
     else:
         contract_line = "🥲 契約なし"
 
-    # ② チャンネル投稿
+    session_summary = result.get("session_summary", "(要約なし)")
+
+    # ② チャンネル投稿(振り返り内容 + FB が1つにまとまった形)
     channel_msg = (
-        f"🎤 *育成FB完了*: {staff_name} さん({session_date})\n"
+        f"🎤 *新規カウンセリング振り返り*: {staff_name} さん({session_date})\n"
         f"{contract_line}\n\n"
-        f"📊 平均★{avg:.1f}/5\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"📝 *振り返り内容*\n"
+        f"{session_summary}\n\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"📊 *評価*  平均★{avg:.1f}/5\n"
         f"{star_line}\n\n"
         f"💎 *良かった点*\n{result.get('good_points', '')}\n\n"
         f"🎯 *改善点*\n{result.get('improvements', '')}"

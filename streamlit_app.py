@@ -402,6 +402,10 @@ def main():
 
         st.success("✦ フィードバック生成完了")
 
+        # 振り返り要約
+        st.markdown('<div class="section-title">SESSION SUMMARY</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="result-card line">{result.get("session_summary", "(要約なし)")}</div>', unsafe_allow_html=True)
+
         # スコア
         st.markdown('<div class="section-title">EVALUATION</div>', unsafe_allow_html=True)
         scores = result.get("scores", {})
@@ -419,12 +423,8 @@ def main():
         st.markdown('<div class="section-title">IMPROVEMENTS</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="result-card warn">{result.get("improvements", "(なし)")}</div>', unsafe_allow_html=True)
 
-        # LINE用文面
-        st.markdown('<div class="section-title">LINE MESSAGE</div>', unsafe_allow_html=True)
-        st.code(result.get("line_message", ""), language="text")
-
         st.divider()
-        st.caption("Slack / Notion 通知は自動で送信されました")
+        st.caption("Slack に 振り返り内容 + 評価 + FB が自動投稿されました")
 
 
 if __name__ == "__main__":
