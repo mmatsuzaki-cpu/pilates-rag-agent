@@ -286,7 +286,6 @@ def render_brand_header():
         # ロゴ画像が無い場合は CSSでブランドロゴを描画
         st.markdown("""
         <h1 class="brand-logo">KOSHIKI <span class="multiply">×</span> La pilates</h1>
-        <p class="brand-tagline">整体 × マシンピラティス</p>
         """, unsafe_allow_html=True)
 
     st.markdown('<div class="brand-divider"></div>', unsafe_allow_html=True)
