@@ -153,7 +153,7 @@ def call_gemini(transcript: str, staff_name: str, session_date,
         customer_job=customer_info.get("job", "(未入力)"),
         customer_concerns=customer_info.get("concerns", "(未入力)"),
         customer_history=customer_info.get("history", "(未入力)"),
-        transcript=transcript[:8000],
+        transcript=transcript[:100000],
         leader_fb_examples=leader_fb,
     )
 
