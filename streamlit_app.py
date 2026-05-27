@@ -12,7 +12,7 @@ from pathlib import Path
 # ── ページ設定 ─────────────────────────────────────
 st.set_page_config(
     page_title="FB SYSTEM | KOSHIKI × La pilates",
-    page_icon="✦",
+    page_icon="🤍",
     layout="centered",
     initial_sidebar_state="collapsed",
 )
@@ -280,7 +280,6 @@ def render_brand_header():
     else:
         # ロゴ画像が無い場合は CSSでブランドロゴを描画
         st.markdown("""
-        <div class="logo-star">✦</div>
         <h1 class="brand-logo">KOSHIKI <span class="multiply">×</span> La pilates</h1>
         <p class="brand-tagline">整体 × マシンピラティス</p>
         """, unsafe_allow_html=True)
@@ -415,7 +414,7 @@ def main():
             help="任意。リーダーや研修担当に相談したいことがあれば記入してね",
         )
 
-        submitted = st.form_submit_button("✦  GENERATE FB  ✦", type="primary")
+        submitted = st.form_submit_button("GENERATE FB", type="primary")
 
     if submitted:
         # 必須チェック
@@ -456,7 +455,7 @@ def main():
                 st.error(f"処理失敗💦 {e}")
                 return
 
-        st.success("✦ フィードバック生成完了")
+        st.success("フィードバック生成完了")
 
         # 振り返り要約
         st.markdown('<div class="section-title">SESSION SUMMARY</div>', unsafe_allow_html=True)
