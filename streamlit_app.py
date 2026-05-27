@@ -74,10 +74,14 @@ CUSTOM_CSS = """
         margin: 0;
     }
     .brand-logo .multiply {
+        font-family: 'Noto Sans JP', sans-serif;
         font-size: 1.5rem;
         vertical-align: middle;
         margin: 0 0.4rem;
-        opacity: 0.85;
+        color: #8B6F47;
+        -webkit-text-fill-color: #8B6F47;
+        background: none;
+        font-weight: 300;
     }
     .brand-tagline {
         text-align: center;
