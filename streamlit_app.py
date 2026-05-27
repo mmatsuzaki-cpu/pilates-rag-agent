@@ -379,8 +379,26 @@ def main():
     if is_no_contract:
         course = "—"
 
-    # 録音 + メモ + 送信は form 内
+    # 録音 + お客様情報 + 送信は form 内
     with st.form("upload_form"):
+        st.markdown('<div class="section-title">CUSTOMER INFORMATION</div>', unsafe_allow_html=True)
+        col_a, col_b = st.columns(2)
+        with col_a:
+            age = st.selectbox(
+                "年齢",
+                ["—", "10代", "20代", "30代", "40代", "50代", "60代", "70代以上"],
+                index=0,
+            )
+        with col_b:
+            job = st.text_input("仕事内容", placeholder="例: 看護師(夜勤あり)")
+
+        concerns = st.text_area(
+            "悩み",
+            placeholder="例: 首肩腰の痛み、3人目出産後の体型変化",
+            height=80,
+        )
+        history = st.text_input("既往歴", placeholder="例: なし / ヘルニア / 帝王切開 等")
+
         st.markdown('<div class="section-title">AUDIO FILE</div>', unsafe_allow_html=True)
         audio_file = st.file_uploader(
             "録音ファイル",
@@ -389,30 +407,40 @@ def main():
             help="新規カウンセリング・体験レッスン・クロージングの録音",
         )
 
-        st.markdown('<div class="section-title">NOTES (OPTIONAL)</div>', unsafe_allow_html=True)
-        notes = st.text_area(
-            "メモ",
-            placeholder="お客様の属性メモ等(あれば)",
-            label_visibility="collapsed",
-            height=100,
-        )
-
         submitted = st.form_submit_button("✦  GENERATE FB  ✦", type="primary")
 
     if submitted:
+        # 必須チェック
+        errors = []
         if not staff_name:
-            st.error("スタッフ名を入力してね💦")
-            return
+            errors.append("スタッフ名")
+        if age == "—":
+            errors.append("年齢")
+        if not job.strip():
+            errors.append("仕事内容")
+        if not concerns.strip():
+            errors.append("悩み")
+        if not history.strip():
+            errors.append("既往歴")
         if not audio_file:
-            st.error("録音ファイルを選んでね💦")
+            errors.append("録音ファイル")
+        if errors:
+            st.error(f"⚠️ 未入力: {', '.join(errors)} を入力してね💦")
             return
 
         # 処理
+        customer_info = {
+            "age": age,
+            "job": job.strip(),
+            "concerns": concerns.strip(),
+            "history": history.strip(),
+        }
         from coaching.coaching_analyzer import analyze_session
         with st.spinner("文字起こし + AI評価中...  1〜2分かかります"):
             try:
                 result = analyze_session(
-                    audio_file, staff_name, session_date, notes,
+                    audio_file, staff_name, session_date,
+                    customer_info=customer_info,
                     contract=contract, course=course, store=store,
                 )
             except Exception as e:
