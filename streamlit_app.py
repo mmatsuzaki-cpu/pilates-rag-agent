@@ -331,7 +331,7 @@ def main():
     # タイトル
     st.markdown('<h2 class="app-title">FB SYSTEM</h2>', unsafe_allow_html=True)
     st.markdown(
-        '<p class="app-subtitle">カウンセリング録音をアップロード → AIが5項目評価+LINE文面を自動生成</p>',
+        '<p class="app-subtitle">カウンセリング録音をアップロード → AIが評価+FBを自動生成</p>',
         unsafe_allow_html=True,
     )
 
