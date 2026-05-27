@@ -199,6 +199,12 @@ def send_slack_notifications(staff_name: str, session_date, result: dict):
     # ② チャンネル投稿(振り返り内容 + FB が1つにまとまった形)
     store = result.get("store", "")
     store_line = f"🏠 {store}店  " if store else ""
+    questions = (result.get("questions") or "").strip()
+    questions_block = (
+        f"\n\n━━━━━━━━━━━━━━\n"
+        f"❓ *リーダー/研修担当への疑問点*\n{questions}"
+        if questions else ""
+    )
     channel_msg = (
         f"🎤 *新規カウンセリング振り返り*\n"
         f"{store_line}👤 {staff_name} さん  📅 {session_date}\n"
@@ -211,6 +217,7 @@ def send_slack_notifications(staff_name: str, session_date, result: dict):
         f"{star_line}\n\n"
         f"💎 *良かった点*\n{result.get('good_points', '')}\n\n"
         f"🎯 *改善点*\n{result.get('improvements', '')}"
+        f"{questions_block}"
     )
     requests.post("https://slack.com/api/chat.postMessage", headers=H,
                   json={"channel": SLACK_FEEDBACK_CHANNEL_ID, "text": channel_msg})
@@ -230,13 +237,15 @@ def send_slack_notifications(staff_name: str, session_date, result: dict):
 
 def analyze_session(audio_file, staff_name: str, session_date,
                     customer_info: dict = None,
-                    contract: str = "なし", course: str = "—", store: str = "") -> dict:
+                    contract: str = "なし", course: str = "—", store: str = "",
+                    questions: str = "") -> dict:
     """Streamlit から呼ばれるメインエントリ
     audio_file: streamlit UploadedFile
     customer_info: お客様情報 dict (age / job / concerns / history)
     contract: 契約結果("あり" / "なし")
     course: コース名(サブスク月X / 年払い月X / 整体なし月X / トライアル2回 / —)
     store: 店舗(川越/大宮/高崎/神戸元町/西宮北口/所沢/浦和)
+    questions: スタッフからの疑問点(任意・リーダー/研修担当に共有)
     """
     # 1. 一時ファイル保存
     suffix = "." + audio_file.name.rsplit(".", 1)[-1]
@@ -256,6 +265,7 @@ def analyze_session(audio_file, staff_name: str, session_date,
         result["contract"] = contract
         result["course"] = course
         result["store"] = store
+        result["questions"] = questions
 
         # 4. Slack通知
         send_slack_notifications(staff_name, session_date, result)

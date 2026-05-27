@@ -407,6 +407,14 @@ def main():
             help="新規カウンセリング・体験レッスン・クロージングの録音",
         )
 
+        st.markdown('<div class="section-title">QUESTIONS (OPTIONAL)</div>', unsafe_allow_html=True)
+        questions = st.text_area(
+            "疑問点(リーダー/研修担当に聞きたいこと)",
+            placeholder="例: 産後ママへのクロージングがうまくできない / トライアル後の提案タイミングは?",
+            height=80,
+            help="任意。リーダーや研修担当に相談したいことがあれば記入してね",
+        )
+
         submitted = st.form_submit_button("✦  GENERATE FB  ✦", type="primary")
 
     if submitted:
@@ -442,6 +450,7 @@ def main():
                     audio_file, staff_name, session_date,
                     customer_info=customer_info,
                     contract=contract, course=course, store=store,
+                    questions=questions.strip(),
                 )
             except Exception as e:
                 st.error(f"処理失敗💦 {e}")
@@ -470,8 +479,13 @@ def main():
         st.markdown('<div class="section-title">IMPROVEMENTS</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="result-card warn">{result.get("improvements", "(なし)")}</div>', unsafe_allow_html=True)
 
+        # 疑問点(任意入力があれば表示)
+        if questions.strip():
+            st.markdown('<div class="section-title">QUESTIONS FOR LEADER</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="result-card line">{questions.strip()}</div>', unsafe_allow_html=True)
+
         st.divider()
-        st.caption("Slack に 振り返り内容 + 評価 + FB が自動投稿されました")
+        st.caption("Slack に 振り返り内容 + 評価 + FB + 疑問点 が自動投稿されました")
 
 
 if __name__ == "__main__":
