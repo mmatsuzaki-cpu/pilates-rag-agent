@@ -26,6 +26,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Playwright Chromium インストール (実績ダッシュボードPNG生成用)
+        run: python -m playwright install --with-deps chromium
+
       - name: credentials / .env 復元
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
@@ -42,6 +45,7 @@ jobs:
           OUTPUT_SPREADSHEET_ID: ${{ secrets.OUTPUT_SPREADSHEET_ID }}
           GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_REPORT_CHANNEL_ID: ${{ secrets.SLACK_REPORT_CHANNEL_ID }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: |
           mkdir -p config data output/logs
@@ -62,6 +66,7 @@ jobs:
           OUTPUT_SPREADSHEET_ID=${OUTPUT_SPREADSHEET_ID}
           GOOGLE_PLACES_API_KEY=${GOOGLE_PLACES_API_KEY}
           SLACK_BOT_TOKEN_FILE=config/slack_bot_token.txt
+          SLACK_REPORT_CHANNEL_ID=${SLACK_REPORT_CHANNEL_ID}
           EOF
 
       - name: ピラティス実績速報 → #ピラティス_実績進捗

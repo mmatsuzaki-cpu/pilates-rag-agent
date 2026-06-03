@@ -2,6 +2,9 @@ gspread>=6.0.0
 google-auth>=2.20.0
 requests>=2.31.0
 
+# 実績ダッシュボード画像生成 (2026-06-04 alert_sender daily 画像化)
+playwright>=1.40.0
+
 # Studio Coach 風アプリ用(2026-05-27〜)
 # 2026-05-28: faster-whisper → Gemini Audio 入力ネイティブに切り替え
 streamlit>=1.40.0
