@@ -62,20 +62,30 @@ def get_reviews_from_kuchikomi(gc):
     v = ws.get_all_values()
     header = v[0]
     try:
-        latest_col = header.index("前月比") - 1
+        latest_col = header.index("前月比") - 1  # 当月列(=「前月比」の左)
     except ValueError:
         latest_col = len(header) - 1
 
     google_rows = {"S001": 1, "S002": 2, "S003": 3, "S004": 4, "S005": 5}  # 0-indexed
     hpb_rows    = {"S001": 6, "S002": 7, "S003": 8, "S004": 9, "S005": 10}
 
+    def latest_value(row):
+        """当月列(latest_col)から左へ走査し、最初の非空セルを返す。
+        当月列が未入力(例: 月初で口コミシートの当月列がまだ空)でも、
+        直近の有効な口コミ件数(累計)にフォールバックして0件表示を防ぐ。
+        月データは col3 以降(col0-2 は 区分/店舗名/目標)なので col3 で停止。
+        """
+        for c in range(min(latest_col, len(row) - 1), 2, -1):
+            cell = str(row[c]).strip() if c < len(row) else ""
+            if cell:
+                return safe_int(cell)
+        return 0
+
     result = {}
     for sid in STORE_ORDER:
         g_row = v[google_rows[sid]] if google_rows[sid] < len(v) else []
         h_row = v[hpb_rows[sid]]    if hpb_rows[sid]    < len(v) else []
-        g = safe_int(g_row[latest_col]) if latest_col < len(g_row) else 0
-        h = safe_int(h_row[latest_col]) if latest_col < len(h_row) else 0
-        result[sid] = {'google': g, 'hpb': h}
+        result[sid] = {'google': latest_value(g_row), 'hpb': latest_value(h_row)}
     return result
 
 

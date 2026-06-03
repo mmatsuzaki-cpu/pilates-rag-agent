@@ -17,6 +17,9 @@ import requests
 sys.path.insert(0, str(Path(__file__).parent))
 from common import PROJECT_ROOT, get_gspread_client, SPREADSHEET_ID
 
+# alert_sender が読む「口コミ」シートのスプシ(⑦月次店舗実績とは別物)
+DASHBOARD_SSID = "1K0_PP4mGQBHzzKYOo2E8bulcwSJJVShS8JK875bdoZA"
+
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 
 # HotPepper URL は将来store毎に変動する可能性あるので config に外出し
@@ -115,6 +118,32 @@ def main():
         if g is not None and h is not None:
             ws.update_cell(target_idx, COL['口コミ合計']+1, g+h)
         print(f"  ✅ {c['name']} 行{target_idx}: G={g} H={h}")
+
+    # ── 口コミダッシュボードシート(DASHBOARD_SSID/「口コミ」)の当月列も更新 ──
+    # alert_sender.get_reviews_from_kuchikomi が読むシート。
+    # 当月列 = 「前月比」の左。Google行=2-6 / HPB行=7-11(1-indexed)。
+    # Google+HPB 合計行(12-16)・前月比列は数式想定のため書き込まない。
+    try:
+        dsh = gc.open_by_key(DASHBOARD_SSID)
+        kws = dsh.worksheet("口コミ")
+        khdr = kws.row_values(1)
+        try:
+            latest_col = khdr.index("前月比")  # 0-indexed → 当月列は -1 だが update は1-indexed
+        except ValueError:
+            latest_col = len(khdr)
+        col_1idx = latest_col  # 「前月比」の左の列(1-indexed) = latest_col(0-indexed の index)
+        google_rows = {"S001": 2, "S002": 3, "S003": 4, "S004": 5, "S005": 6}  # 1-indexed
+        hpb_rows    = {"S001": 7, "S002": 8, "S003": 9, "S004": 10, "S005": 11}
+        n = 0
+        for sid, c in counts.items():
+            g, h = c["google"], c["hpb"]
+            if g is not None and sid in google_rows:
+                kws.update_cell(google_rows[sid], col_1idx, g); n += 1
+            if h is not None and sid in hpb_rows:
+                kws.update_cell(hpb_rows[sid], col_1idx, h); n += 1
+        print(f"  ✅ 口コミシート 当月列(col{col_1idx}) 更新: {n}セル")
+    except Exception as e:
+        print(f"  ⚠️ 口コミシート更新失敗(無視): {e}")
 
     print("\n🎉 完了!")
     return 0
