@@ -120,16 +120,36 @@ def get_store_summary(gc, store: dict, year: int, month: int) -> dict:
         "year": year, "month": month, "year_month": f"{year}-{month:02d}",
         "newcomers": 0, "contracts": 0, "contract_rate": 0.0,
         "cancels": 0, "referrals": 0, "members": 0,
+        "staff": [],   # スタッフ別 [{name, newcomers, contracts}] (2026-06-04 追加)
     }
 
-    # 1. LTVシート(429時は自動リトライ)
+    # 1. LTVシート: 店舗合計(D4/G4/H4) + スタッフ別ブロック
+    #    レイアウト: 店舗合計=B-H列。スタッフは J列(0idx 9)以降 8列刻みのブロック。
+    #      各ブロック: row2=スタッフ名 / row3=項目ヘッダ(新規数/契約数等) / row4=全体の値
+    #    "スタッフ7"等のプレースホルダ名・実績0の人は除外。
     ltv = find_sheet(sh, [ltv_sheet_name(year, month), f"R{reiwa_year(year)}.{month}月LTV "])
     if ltv:
         try:
-            vals = with_retry(ltv.batch_get, ["D4", "G4", "H4"])
-            result["newcomers"] = safe_int(vals[0][0][0]) if vals[0] else 0
-            result["contracts"] = safe_int(vals[1][0][0]) if vals[1] else 0
-            result["contract_rate"] = safe_pct(vals[2][0][0]) if vals[2] else 0.0
+            rows = with_retry(ltv.get, "A2:CK4")  # [row2(名前), row3(項目), row4(全体)]
+            r2 = rows[0] if len(rows) > 0 else []
+            r3 = rows[1] if len(rows) > 1 else []
+            r4 = rows[2] if len(rows) > 2 else []
+            # 店舗合計 (D4=新規数 / G4=契約数 / H4=契約率)
+            result["newcomers"]     = safe_int(r4[3]) if len(r4) > 3 else 0
+            result["contracts"]     = safe_int(r4[6]) if len(r4) > 6 else 0
+            result["contract_rate"] = safe_pct(r4[7]) if len(r4) > 7 else 0.0
+            # スタッフ別ブロック (J列=index9, 8列刻み)
+            c = 9
+            while c < len(r3):
+                name = r2[c].strip() if c < len(r2) else ""
+                if name and not name.startswith("スタッフ"):
+                    hdr = [r3[c+k].strip() if c+k < len(r3) else "" for k in range(8)]
+                    val = [r4[c+k].strip() if c+k < len(r4) else "" for k in range(8)]
+                    nv = safe_int(val[hdr.index("新規数")]) if "新規数" in hdr else 0
+                    kv = safe_int(val[hdr.index("契約数")]) if "契約数" in hdr else 0
+                    if nv > 0 or kv > 0:
+                        result["staff"].append({"name": name, "newcomers": nv, "contracts": kv})
+                c += 8
         except Exception as e:
             print(f"    ⚠️ LTV取得失敗: {e}")
 

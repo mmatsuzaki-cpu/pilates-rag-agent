@@ -175,13 +175,9 @@ def total_block(t):
     </div>"""
 
 
-# ---- HTML 全体 ---------------------------------------------------
-def build_html(d):
-    n = len(d["stores"])
-    s = density_styles(n)
-    cards = "".join(store_card(st) for st in d["stores"])
-    return f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
-<style>
+# ---- 共有 CSS ----------------------------------------------------
+def _css(s):
+    return f"""
   * {{ margin:0; padding:0; box-sizing:border-box; }}
   :root {{
     /* La pilates ブランドカラー: ブロンズ→ゴールドのグラデ / 暖白背景 */
@@ -229,14 +225,14 @@ def build_html(d):
     padding:{s['card_pad']}; box-shadow:0 3px 10px rgba(60,55,80,.06); }}
   .card-head {{ display:flex; align-items:baseline; gap:12px; padding-bottom:12px;
     border-bottom:1.5px dashed var(--line); margin-bottom:6px; }}
-  .store-name {{ font-family:"Noto Serif CJK JP",serif; font-size:{s['store_name']}px; font-weight:900; color:var(--purple-d); }}
+  .store-name {{ font-family:"Noto Serif CJK JP",serif; font-size:{s['store_name']}px; font-weight:900; color:var(--gold-d); }}
   .kpis {{ }}
   .kpi {{ display:flex; align-items:center; justify-content:space-between;
     padding:10px 0; border-bottom:1px solid #F2EEF8; }}
   .kpi:last-child {{ border-bottom:none; }}
   .kpi-label {{ font-size:{s['kpi_label']}px; font-weight:600; color:#3a3550; display:flex; align-items:center; gap:9px; }}
   .kpi-no {{ display:inline-grid; place-items:center; width:22px; height:22px; border-radius:6px;
-    background:#EDE6F6; color:var(--purple-d); font-size:13px; font-weight:800; }}
+    background:#EDE6F6; color:var(--gold-d); font-size:13px; font-weight:800; }}
   .kpi-val {{ display:flex; align-items:baseline; gap:8px; }}
   .rate {{ font-size:{s['rate_size']}px; font-weight:900; font-family:"Noto Serif CJK JP",serif; line-height:1; }}
   .rate-good {{ color:var(--good); }} .rate-mid {{ color:var(--mid); }}
@@ -247,8 +243,26 @@ def build_html(d):
   .cancel {{ font-size:12px; font-weight:700; padding:2px 9px; border-radius:999px; margin-left:4px; }}
   .cancel-ok {{ background:#EAF1EB; color:var(--good); }}
   .cancel-warn {{ background:#F7E2DD; color:var(--zero); }}
+  /* staff(スタッフ別契約率) */
+  .store-rate {{ margin-left:auto; font-size:20px; font-weight:900; font-family:"Noto Serif CJK JP",serif; line-height:1; }}
+  .store-frac {{ font-size:13px; color:var(--sub); margin-left:4px; font-weight:600; }}
+  .staff-list {{ }}
+  .srow {{ display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-bottom:1px solid #F2EEF8; }}
+  .srow:last-child {{ border-bottom:none; }}
+  .sname {{ font-size:{s['kpi_label']}px; font-weight:700; color:#3a3550; }}
+  .sval {{ display:flex; align-items:baseline; gap:8px; }}
+  .s-empty {{ font-size:14px; color:var(--none); padding:10px 0; }}
   .footer {{ margin-top:24px; text-align:right; font-size:12px; color:var(--none); letter-spacing:.05em; }}
-</style></head><body>
+"""
+
+
+# ---- HTML 全体 (店舗別ダッシュボード) ----------------------------
+def build_html(d):
+    n = len(d["stores"])
+    s = density_styles(n)
+    cards = "".join(store_card(st) for st in d["stores"])
+    return f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<style>{_css(s)}</style></head><body>
   <div class="header">
     <div class="h-left">
       <span class="spark">✳</span>
@@ -260,6 +274,50 @@ def build_html(d):
   {total_block(d['total'])}
   <div class="grid">{cards}</div>
   <div class="footer">契約率の色分け　緑=50%以上 / 橙=1〜49% / 赤=0% / 灰=母数なし</div>
+</body></html>"""
+
+
+# ---- スタッフ別契約率カード --------------------------------------
+def staff_card(s_):
+    emoji = signal_emoji(s_["contract"]["num"], s_["contract"]["den"])
+    cls = rate_class(s_["contract"]["num"], s_["contract"]["den"])
+    staff = s_.get("staff", [])
+    if staff:
+        rows = "".join(
+            f'<div class="srow"><span class="sname">{m["name"]}</span>'
+            f'<span class="sval"><span class="rate rate-{rate_class(m["num"], m["den"])}">{rate_label(m["num"], m["den"])}</span>'
+            f'<span class="frac">({m["num"]}/{m["den"]})</span></span></div>'
+            for m in staff
+        )
+    else:
+        rows = '<div class="s-empty">実績データなし</div>'
+    return f"""
+    <div class="card">
+      <div class="card-head">
+        <span class="store-name">{emoji} {s_['name']}</span>
+        <span class="store-rate rate-{cls}">{rate_label(s_['contract']['num'], s_['contract']['den'])}<span class="store-frac">({s_['contract']['num']}/{s_['contract']['den']})</span></span>
+      </div>
+      <div class="staff-list">{rows}</div>
+    </div>"""
+
+
+# ---- スタッフ別 HTML 全体 ----------------------------------------
+def build_staff_html(d):
+    n = len(d["stores"])
+    s = density_styles(n)
+    cards = "".join(staff_card(st) for st in d["stores"])
+    return f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<style>{_css(s)}</style></head><body>
+  <div class="header">
+    <div class="h-left">
+      <span class="spark">✳</span>
+      <span class="brand">{d['title']}</span>
+      <span class="sub">{d['subtitle']}</span>
+    </div>
+    <span class="asof">{d['as_of']}</span>
+  </div>
+  <div class="grid">{cards}</div>
+  <div class="footer">契約率の色分け　緑=50%以上 / 橙=1〜49% / 赤=0% / 灰=母数なし　|　数字 = 契約/新規</div>
 </body></html>"""
 
 
@@ -278,11 +336,31 @@ def render_to_png(d, out_path: Path):
     print(f"wrote {out_path}  (n={n}, ncols={s['ncols']}, body={s['body_w']}px)")
 
 
+def render_staff_to_png(d, out_path: Path):
+    """スタッフ別契約率ダッシュボードを1件レンダリング"""
+    n = len(d["stores"])
+    s = density_styles(n)
+    html = build_staff_html(d)
+    with sync_playwright() as p:
+        b = p.chromium.launch()
+        pg = b.new_page(viewport={"width": s["body_w"], "height": 800},
+                        device_scale_factor=2)
+        pg.set_content(html, wait_until="networkidle")
+        pg.locator("body").screenshot(path=str(out_path))
+        b.close()
+    print(f"wrote {out_path}  (staff / n={n}, ncols={s['ncols']}, body={s['body_w']}px)")
+
+
 def main():
-    data_path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("data.json")
-    out_path = Path(sys.argv[2]) if len(sys.argv) > 2 else Path("out.png")
+    # 使い方: dashboard_render.py [data.json] [out.png] [--staff]
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    data_path = Path(args[0]) if len(args) > 0 else Path("data.json")
+    out_path = Path(args[1]) if len(args) > 1 else Path("out.png")
     d = json.loads(data_path.read_text(encoding="utf-8"))
-    render_to_png(d, out_path)
+    if "--staff" in sys.argv:
+        render_staff_to_png(d, out_path)
+    else:
+        render_to_png(d, out_path)
 
 
 if __name__ == "__main__":

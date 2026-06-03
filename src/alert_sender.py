@@ -239,6 +239,30 @@ def _agg_to_dashboard_data(summary: dict, title: str, subtitle: str, as_of: str)
     }
 
 
+def _agg_to_staff_data(summary: dict, title: str, subtitle: str, as_of: str) -> dict:
+    """スタッフ別契約率ダッシュボード用データに変換 (2枚目の画像)
+    各店舗カードに、その店舗のスタッフ別契約率(契約数/新規数)を新規数の多い順に並べる。
+    summary[sid]["staff"] = [{name, newcomers, contracts}] (store_summary_reader が抽出)
+    """
+    name_by_id = {s["id"]: s["name"] for s in STORES}
+    stores = []
+    for sid in STORE_ORDER:
+        if sid not in summary:
+            continue
+        d = summary[sid]
+        staff = [
+            {"name": m["name"], "num": m.get("contracts", 0), "den": m.get("newcomers", 0)}
+            for m in d.get("staff", [])
+        ]
+        staff.sort(key=lambda x: (-x["den"], -x["num"]))  # 新規数(担当数)の多い順
+        stores.append({
+            "name": name_by_id.get(sid, d.get("name", sid)),
+            "contract": {"num": d.get("contracts", 0), "den": d.get("newcomers", 0)},
+            "staff": staff,
+        })
+    return {"title": title, "subtitle": subtitle, "as_of": as_of, "stores": stores}
+
+
 def _slack_upload_png(channel_id: str, png_paths, comment: str = "") -> bool:
     """Slack files.upload v2 で PNG を投稿 (複数ファイル対応 = 1投稿に複数添付)
     channel_id: チャンネルID(C...)。png_paths: Path 単体 または Path のリスト
@@ -246,7 +270,7 @@ def _slack_upload_png(channel_id: str, png_paths, comment: str = "") -> bool:
     import requests
     if isinstance(png_paths, (str, Path)):
         png_paths = [Path(png_paths)]
-    titles = ["当月累計の実績", "実績ダッシュボード"]
+    titles = ["店舗別 当月累計", "スタッフ別 契約率"]
     try:
         files_meta = []
         for i, pp in enumerate(png_paths):
@@ -285,32 +309,44 @@ def _slack_upload_png(channel_id: str, png_paths, comment: str = "") -> bool:
         return False
 
 
-def _send_dashboard(data: dict, channel_id: str, comment: str, empty_note: str) -> bool:
-    """ダッシュボードPNG(当月累計1枚)を生成して 1投稿で送信
+def _send_daily_dashboards(store_data: dict, staff_data: dict, channel_id: str,
+                           comment: str, empty_note: str) -> bool:
+    """daily用: ①店舗別当月累計 ②スタッフ別契約率 の2枚PNGを 1投稿でまとめて送信
     実績ある店舗が無ければ empty_note をテキスト投稿
     """
     try:
-        from dashboard_render import render_to_png
+        from dashboard_render import render_to_png, render_staff_to_png
     except ImportError as e:
         print(f"  ⚠️ dashboard_render import失敗(PNG送信スキップ): {e}")
         return False
-    if not data["stores"]:
+    now = datetime.now()
+    stamp = now.strftime('%Y%m%d_%H%M%S_%f')
+    pngs = []
+    if store_data["stores"]:
+        p1 = Path(f"/tmp/pilates_store_{stamp}.png")
+        try:
+            render_to_png(store_data, p1); pngs.append(p1)
+        except Exception as e:
+            print(f"  ⚠️ 店舗別PNG生成失敗: {e}")
+    if staff_data["stores"]:
+        p2 = Path(f"/tmp/pilates_staff_{stamp}.png")
+        try:
+            render_staff_to_png(staff_data, p2); pngs.append(p2)
+        except Exception as e:
+            print(f"  ⚠️ スタッフ別PNG生成失敗: {e}")
+
+    if not pngs:
         res = slack_post_message(channel_id, empty_note)
         print("  ℹ️ 実績なし → テキスト通知" if res.get("ok") else f"  ❌ テキスト通知失敗: {res.get('error')}")
         return res.get("ok", False)
-    now = datetime.now()
-    out_path = Path(f"/tmp/pilates_dashboard_{now.strftime('%Y%m%d_%H%M%S_%f')}.png")
-    try:
-        render_to_png(data, out_path)
-    except Exception as e:
-        print(f"  ⚠️ PNG生成失敗: {e}")
-        return False
-    ok = _slack_upload_png(channel_id, out_path, comment)
-    print("  🖼️ ダッシュボードPNG 送信成功" if ok else "  ❌ ダッシュボードPNG 送信失敗")
-    try:
-        out_path.unlink()
-    except Exception:
-        pass
+
+    ok = _slack_upload_png(channel_id, pngs, comment)
+    print(f"  🖼️ ダッシュボードPNG {len(pngs)}枚 1投稿で送信成功" if ok else "  ❌ ダッシュボードPNG 送信失敗")
+    for p in pngs:
+        try:
+            p.unlink()
+        except Exception:
+            pass
     return ok
 
 
@@ -437,13 +473,15 @@ def main():
     if report_type == "daily":
         weekday_j = ["月", "火", "水", "木", "金", "土", "日"][ref.weekday()]
         subtitle = f"新規実績　{ref.month}月の集計({ref.day}日時点)"
+        staff_subtitle = f"スタッフ別契約率　{ref.month}月({ref.day}日時点)"
         as_of_label = f"{ref.month}/{ref.day} 時点"
-        data = _agg_to_dashboard_data(summary, "La pilates", subtitle, as_of_label)
+        store_data = _agg_to_dashboard_data(summary, "La pilates", subtitle, as_of_label)
+        staff_data = _agg_to_staff_data(summary, "La pilates", staff_subtitle, as_of_label)
 
         mention = "" if "--silent" in sys.argv else "<!channel>\n"
         head = (f"{mention}:cherry_blossom: *ラピラティス新規実績　"
                 f"{ref.month}/{ref.day}({weekday_j})* :cherry_blossom:\n"
-                f"当月累計({ref.day}日時点)")
+                f"① 店舗別 当月累計({ref.day}日時点)　② スタッフ別 契約率")
         empty_note = (f"{mention}:cherry_blossom: *ラピラティス新規実績　"
                       f"{ref.month}/{ref.day}({weekday_j})* :cherry_blossom:\n"
                       f"まだ実績はありません({ref.day}日時点)")
@@ -451,7 +489,10 @@ def main():
         if "--dry" in sys.argv:
             print("\n" + "=" * 60)
             print(head)
-            print(f"[stores={len(data['stores'])}] total={data['total']}")
+            print(f"[店舗別 stores={len(store_data['stores'])}] total={store_data['total']}")
+            for st in staff_data["stores"]:
+                names = ", ".join(f"{m['name']}({m['num']}/{m['den']})" for m in st["staff"])
+                print(f"  {st['name']}: {names or '実績データなし'}")
             print("=" * 60)
             return 0
 
@@ -464,7 +505,7 @@ def main():
                   "env SLACK_REPORT_CHANNEL_ID を確認してください。")
             return 1
 
-        ok = _send_dashboard(data, report_channel, head, empty_note)
+        ok = _send_daily_dashboards(store_data, staff_data, report_channel, head, empty_note)
         return 0 if ok else 1
 
     # ── mid/end: 従来通り webhook テキスト ───────────────────
