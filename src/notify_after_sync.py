@@ -40,7 +40,29 @@ def main():
 
     today = datetime.now().date().isoformat()
     log = PROJECT_ROOT / "output" / "logs" / f"feedback_{today}.log"
+    log_exists = log.exists()
     counts = parse_log(log)
+
+    # ── Fail-safe: ログが無い場合は誤送信を防ぐため警告DMに切り替え ──
+    # 過去バグ: GitHub Actionsのランナー間でファイル共有されず、ログが見つからず
+    # 常に「本日の新規取り込みはありませんでした」を誤送信していた(〜2026-06-05)
+    if not log_exists:
+        warning = (
+            "⚠️ *振り返り蓄積完了通知 - ログ取得失敗*\n"
+            f"_{today} {datetime.now().strftime('%H:%M')}_\n\n"
+            f"📁 期待したログ: `output/logs/feedback_{today}.log`\n"
+            "🚨 ログファイルが見つからないため件数が確認できません。\n\n"
+            "考えられる原因:\n"
+            "・GitHub Actions の feedback.yml が失敗した\n"
+            "・別ランナーで生成されたログが共有されていない\n"
+            "・スクリプトのパス変更/権限問題\n\n"
+            "→ feedback.yml のログ確認をお願いします。"
+        )
+        if slack_dm(user_id, warning):
+            print(f"⚠️ ログ無し → 警告DM送信: log={log}")
+            return 1
+        print(f"❌ 警告DM送信も失敗: log={log}")
+        return 1
 
     archive_id = os.environ.get("NOTION_DATABASE_ID", "").replace("-", "")
     success_id = os.environ.get("NOTION_SUCCESS_DB_ID", "").replace("-", "")

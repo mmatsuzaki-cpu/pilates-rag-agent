@@ -64,32 +64,45 @@ jobs:
           SLACK_BOT_TOKEN_FILE=config/slack_bot_token.txt
           EOF
 
-      - name: 📨 Slack→Notion 同期
-        run: python -u src/slack_fetcher.py
-        continue-on-error: true
+      - name: 📥 振り返り全自動処理(ログ蓄積つき)
+        env:
+          TZ: Asia/Tokyo
+        run: |
+          mkdir -p output/logs
+          LOG="output/logs/feedback_$(date +%Y-%m-%d).log"
+          {
+            echo "===================================="
+            echo "📥 feedback $(date '+%Y-%m-%d %H:%M:%S') (GitHub Actions)"
+            echo "===================================="
+            echo ""
+            echo "📨 [1/7] Slack→Notion同期"
+            python -u src/slack_fetcher.py || echo "❌ slack_fetcher 失敗(継続)"
+            echo ""
+            echo "💎 [2/7] リーダーFB抽出→Notion蓄積"
+            python -u src/leader_fb_extractor.py || echo "❌ leader_fb_extractor 失敗(継続)"
+            echo ""
+            echo "📥 [3/7] 受信箱処理"
+            python -u src/inbox_processor.py || echo "❌ inbox_processor 失敗(継続)"
+            echo ""
+            echo "✨ [4/7] 成功事例検出"
+            python -u src/success_detector.py --days 7 || echo "❌ success_detector 失敗(継続)"
+            echo ""
+            echo "⭐ [5/7] 口コミ取得(Google + HPB)"
+            python -u src/reviews_fetcher.py || echo "❌ reviews_fetcher 失敗(継続)"
+            echo ""
+            echo "📊 [6/7] ダッシュボード更新"
+            python -u src/full_dashboard_updater.py --daily || echo "❌ full_dashboard_updater 失敗(継続)"
+            echo ""
+            echo "👥 [7/7] 解約集計_スタッフ別 更新"
+            python -u src/cancel_staff_aggregator.py || echo "❌ cancel_staff_aggregator 失敗(継続)"
+            echo ""
+            echo "完了: $(date '+%H:%M:%S')"
+          } 2>&1 | tee -a "$LOG"
 
-      - name: 💎 リーダーFB抽出 → Notion蓄積
-        run: python -u src/leader_fb_extractor.py
-        continue-on-error: true
-
-      - name: 📥 受信箱処理
-        run: python -u src/inbox_processor.py
-        continue-on-error: true
-
-      - name: ✨ 成功事例検出
-        run: python -u src/success_detector.py --days 7
-        continue-on-error: true
-
-      - name: ⭐ 口コミ取得(Google + HPB)
-        run: python -u src/reviews_fetcher.py
-        continue-on-error: true
-
-      - name: 📊 ダッシュボード更新(契約率/解約率/口コミ)
-        run: python -u src/full_dashboard_updater.py --daily
-        continue-on-error: true
-
-      - name: 👥 解約集計_スタッフ別 更新
-        run: python -u src/cancel_staff_aggregator.py
+      - name: 📩 振り返り蓄積完了通知 → 松崎さんDM (同ランナー内・ログ確実)
+        env:
+          TZ: Asia/Tokyo
+        run: python -u src/notify_after_sync.py
         continue-on-error: true
 
       - name: ログ確認

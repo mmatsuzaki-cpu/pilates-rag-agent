@@ -76,9 +76,10 @@ jobs:
       - name: ピラティス実績速報 → #ピラティス_実績進捗
         run: python -u src/alert_sender.py
 
-      - name: 振り返り蓄積完了通知 → 松崎さんDM
-        run: python -u src/notify_after_sync.py
-        continue-on-error: true
+      # ⚠️ 振り返り蓄積完了通知は feedback.yml(10:07 JST) に移動 (2026-06-05)
+      # 理由: GitHub Actions のランナー間でファイル共有されないため、
+      # feedback.yml で生成したログを daily.yml が読めず常に「0件」誤送信になっていた
+      # 同じランナー内で完結させるために feedback.yml の最終ステップに統合
 
       - name: ログ確認
         if: always()
