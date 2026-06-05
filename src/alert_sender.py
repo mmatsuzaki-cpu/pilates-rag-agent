@@ -471,7 +471,6 @@ def main():
 
     # ── daily: 画像ダッシュボード ─────────────────────────────
     if report_type == "daily":
-        weekday_j = ["月", "火", "水", "木", "金", "土", "日"][ref.weekday()]
         subtitle = f"新規実績　{ref.month}月の集計({ref.day}日時点)"
         staff_subtitle = f"スタッフ別契約率　{ref.month}月({ref.day}日時点)"
         as_of_label = f"{ref.month}/{ref.day} 時点"
@@ -479,11 +478,10 @@ def main():
         staff_data = _agg_to_staff_data(summary, "La pilates", staff_subtitle, as_of_label)
 
         mention = "" if "--silent" in sys.argv else "<!channel>\n"
-        head = (f"{mention}:cherry_blossom: *ラピラティス新規実績　"
-                f"{ref.month}/{ref.day}({weekday_j})* :cherry_blossom:\n"
-                f"① 店舗別 当月累計({ref.day}日時点)　② スタッフ別 契約率")
-        empty_note = (f"{mention}:cherry_blossom: *ラピラティス新規実績　"
-                      f"{ref.month}/{ref.day}({weekday_j})* :cherry_blossom:\n"
+        head = (f"{mention}:cherry_blossom: *KOSHIKIラピラティス新規実績* :cherry_blossom:\n"
+                f"① 店舗別 当月累計({ref.day}日時点)\n"
+                f"② スタッフ別 契約率({ref.day}日時点)")
+        empty_note = (f"{mention}:cherry_blossom: *KOSHIKIラピラティス新規実績* :cherry_blossom:\n"
                       f"まだ実績はありません({ref.day}日時点)")
 
         if "--dry" in sys.argv:
