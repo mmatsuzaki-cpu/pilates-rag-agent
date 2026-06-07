@@ -26,8 +26,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 # 並列文字起こしの設定
+# Free Tier (10 RPM) に最適化: 並列度3 + 3秒スタッガで安全に消費
+# Tier 1 (1000 RPM) なら並列度を MAX_PARALLEL_WORKERS=8 に上げてもOK
 CHUNK_MINUTES = 5  # 1チャンクの長さ(分)
-MAX_PARALLEL_WORKERS = 5  # 同時並列リクエスト数
+MAX_PARALLEL_WORKERS = 3  # 同時並列リクエスト数(Free Tier安全側)
+CHUNK_STAGGER_SECONDS = 3  # チャンク投入の時間差(秒)
 SINGLE_FILE_SIZE_LIMIT_MB = 20  # この値以下は分割せず一発処理
 
 # 環境変数読み込み(Streamlit Cloud では st.secrets、ローカルでは .env)
@@ -253,12 +256,13 @@ def transcribe_audio_parallel(audio_path: str, progress_callback=None) -> dict:
     failed_first = []
 
     try:
-        # 第1ラウンド: 並列実行
+        # 第1ラウンド: 並列実行(時間差スタッガで投入)
         with ThreadPoolExecutor(max_workers=MAX_PARALLEL_WORKERS) as executor:
-            future_to_idx = {
-                executor.submit(transcribe_single_chunk, chunk, i): i
-                for i, chunk in enumerate(chunks)
-            }
+            future_to_idx = {}
+            for i, chunk in enumerate(chunks):
+                future_to_idx[executor.submit(transcribe_single_chunk, chunk, i)] = i
+                if i > 0 and i < len(chunks) - 1:
+                    time.sleep(CHUNK_STAGGER_SECONDS)
             for future in as_completed(future_to_idx):
                 idx = future_to_idx[future]
                 try:
