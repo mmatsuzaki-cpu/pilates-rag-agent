@@ -634,7 +634,7 @@ def send_slack_notifications(staff_name: str, session_date, result: dict):
         f"{questions_block}"
     )
     requests.post("https://slack.com/api/chat.postMessage", headers=H,
-                  json={"channel": SLACK_FEEDBACK_CHANNEL_ID, "text": channel_msg})
+                  data=json.dumps({"channel": SLACK_FEEDBACK_CHANNEL_ID, "text": channel_msg}, ensure_ascii=False).encode("utf-8"))
 
     # ③ 松崎さん完了DM
     if SLACK_OWNER_USER_ID:
@@ -643,8 +643,8 @@ def send_slack_notifications(staff_name: str, session_date, result: dict):
         if dm_open.get("ok"):
             dm_id = dm_open["channel"]["id"]
             requests.post("https://slack.com/api/chat.postMessage", headers=H,
-                          json={"channel": dm_id,
-                                "text": f"✅ *育成FB処理完了*\n{staff_name} さん({session_date})の評価が #ピラティス_新規振り返り に投稿されました📩"})
+                          data=json.dumps({"channel": dm_id,
+                                "text": f"✅ *育成FB処理完了*\n{staff_name} さん({session_date})の評価が #ピラティス_新規振り返り に投稿されました📩"}, ensure_ascii=False).encode("utf-8"))
 
 
 # ── 4. Notion 蓄積 ────────────────────────────────
@@ -732,7 +732,8 @@ def save_to_notion(staff_name: str, session_date, result: dict) -> str:
     }
 
     try:
-        r = requests.post("https://api.notion.com/v1/pages", headers=H, json=payload, timeout=30)
+        r = requests.post("https://api.notion.com/v1/pages", headers=H,
+                          data=json.dumps(payload, ensure_ascii=False).encode("utf-8"), timeout=30)
         if r.status_code == 200:
             return r.json().get("url", "")
         else:
