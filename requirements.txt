@@ -8,5 +8,7 @@ playwright>=1.40.0
 # Studio Coach 風アプリ用(2026-05-27〜)
 # 2026-05-28: faster-whisper → Gemini Audio 入力ネイティブに切り替え
 # 2026-05-28: 大ファイル対応のチャンク分割並列処理(ffmpeg直接呼出)
+# 2026-06-07: バージョン固定(ビルド安定化 + latin-1エンコード対策)
 streamlit>=1.40.0
-google-generativeai>=0.8.0
+requests==2.32.3
+google-generativeai==0.8.5

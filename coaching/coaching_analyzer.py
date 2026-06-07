@@ -119,7 +119,7 @@ def fetch_leader_fb_examples(n: int = 3) -> str:
         r = requests.post(
             f"https://api.notion.com/v1/databases/{NOTION_LEADER_FB_DB_ID.replace('-', '')}/query",
             headers=H,
-            json={"page_size": n, "sorts": [{"timestamp": "created_time", "direction": "descending"}]},
+            data=json.dumps({"page_size": n, "sorts": [{"timestamp": "created_time", "direction": "descending"}]}, ensure_ascii=False).encode("utf-8"),
         )
         examples = []
         for p in r.json().get("results", [])[:n]:
@@ -639,7 +639,7 @@ def send_slack_notifications(staff_name: str, session_date, result: dict):
     # ③ 松崎さん完了DM
     if SLACK_OWNER_USER_ID:
         dm_open = requests.post("https://slack.com/api/conversations.open",
-                                headers=H, json={"users": SLACK_OWNER_USER_ID}).json()
+                                headers=H, data=json.dumps({"users": SLACK_OWNER_USER_ID}, ensure_ascii=False).encode("utf-8")).json()
         if dm_open.get("ok"):
             dm_id = dm_open["channel"]["id"]
             requests.post("https://slack.com/api/chat.postMessage", headers=H,
