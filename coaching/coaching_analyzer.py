@@ -257,7 +257,7 @@ def transcribe_single_chunk(chunk_path: str, chunk_index: int = 0) -> str:
     else:
         raise RuntimeError(f"チャンク{chunk_index}: アップロード タイムアウト")
 
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    model = genai.GenerativeModel("gemini-2.5-flash")
     response = _gemini_call_with_retry(
         model,
         [uploaded, TRANSCRIBE_PROMPT],
@@ -411,7 +411,7 @@ def evaluate_from_transcript(transcript: str, staff_name: str, session_date,
     )
     text_prompt += f"\n\n【カウンセリング文字起こし】\n{transcript[:200000]}\n"
 
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    model = genai.GenerativeModel("gemini-2.5-flash")
     gen_config = {"temperature": 0.2, "response_mime_type": "application/json"}
 
     response = _gemini_call_with_retry(model, [text_prompt], generation_config=gen_config, timeout=600)
@@ -482,7 +482,7 @@ def call_gemini_with_audio(audio_path: str, staff_name: str, session_date,
     )
 
     # ── ③ Gemini 呼び出し(音声 + プロンプト) - 429リトライ対応 ──
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    model = genai.GenerativeModel("gemini-2.5-flash")
     gen_config = {"temperature": 0.2, "response_mime_type": "application/json"}
     response = _gemini_call_with_retry(model, [uploaded, prompt], generation_config=gen_config, timeout=600)
 
