@@ -792,10 +792,10 @@ def main():
         st.markdown('<div class="section-title">Evaluation Scores</div>', unsafe_allow_html=True)
         scores = result.get("scores", {})
         col_a, col_b, col_c, col_d = st.columns(4)
-        with col_a: st.metric("HEARING",  f"{scores.get('hearing', 0)} / 5")
-        with col_b: st.metric("PROPOSAL", f"{scores.get('proposal', 0)} / 5")
-        with col_c: st.metric("CLOSING",  f"{scores.get('closing', 0)} / 5")
-        with col_d: st.metric("TONE",     f"{scores.get('tone', 0)} / 5")
+        with col_a: st.metric("ヒアリング",   f"{scores.get('hearing', 0)} / 5")
+        with col_b: st.metric("提案",         f"{scores.get('proposal', 0)} / 5")
+        with col_c: st.metric("クロージング", f"{scores.get('closing', 0)} / 5")
+        with col_d: st.metric("トーン",       f"{scores.get('tone', 0)} / 5")
 
         # 良かったポイント
         st.markdown('<div class="section-title">Strengths</div>', unsafe_allow_html=True)
