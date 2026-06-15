@@ -1,4 +1,4 @@
-name: 📊 ピラティス 月次レポート (mid: 16日 / end: 1日)
+name: "📊 ピラティス 月次レポート (mid: 16日 / end: 1日)"
 
 on:
   schedule:
