@@ -1,9 +1,9 @@
 name: "📊 ピラティス 月次レポート (mid: 16日 / end: 1日)"
 
+# 2026-06-17 自動配信を停止: 毎日の画像付きdaily配信に役割を統合したため、
+#   月次テキストレポート(mid 16日 / end 1日)の自動発火(schedule)を廃止。手動実行のみ残す。
+#   復活させたい場合は下に schedule: の cron を戻す。
 on:
-  schedule:
-    - cron: '7 13 16 * *'   # 16日 22:07 JST (mid)
-    - cron: '7 13 1 * *'    # 1日 22:07 JST (end)
   workflow_dispatch:
     inputs:
       report_type:
