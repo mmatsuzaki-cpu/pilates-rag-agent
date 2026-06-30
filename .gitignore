@@ -17,3 +17,6 @@ __pycache__/
 
 # OS
 .DS_Store
+
+# Streamlit local secrets (ブラウザテスト用・コミット厳禁)
+.streamlit/secrets.toml

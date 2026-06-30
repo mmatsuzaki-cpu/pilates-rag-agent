@@ -142,7 +142,11 @@ TRANSCRIBE_PROMPT = """添付の音声を日本語で正確に文字起こしし
 
 
 def _strip_loops(text: str) -> str:
-    """モデル暴走で同じフレーズが連続したものを除去"""
+    """モデル暴走で同じフレーズが連続したものを除去
+    句点・改行で分割し、同一文が3回以上連続したら3回目以降をスキップ。
+    空白/改行のみのパートは prev を変えずそのまま保持(改行区切りの
+    繰り返しを取りこぼさないため)。
+    """
     if not text:
         return text
     parts = re.split(r'(?<=[。\n])', text)
@@ -151,7 +155,11 @@ def _strip_loops(text: str) -> str:
     repeat = 0
     for p in parts:
         ps = p.strip()
-        if ps and ps == prev:
+        if not ps:
+            # 空白・改行のみ → prev を維持したまま保持
+            cleaned.append(p)
+            continue
+        if ps == prev:
             repeat += 1
             if repeat >= 2:
                 continue
@@ -214,7 +222,8 @@ def compress_audio_if_large(audio_path: str, target_mb: float = 15.0) -> tuple:
         new_size = os.path.getsize(output_path) / 1024 / 1024
         print(f"[Compress] {size_mb:.1f}MB → {new_size:.1f}MB")
         return output_path, True
-    except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError) as e:
+        # FileNotFoundError = ffmpeg未インストール(packages.txtで導入されるはず)
         print(f"[Compress] 失敗、元ファイル使用: {e}")
         return audio_path, False
 
@@ -234,6 +243,11 @@ def split_audio_to_chunks(audio_path: str, chunk_minutes: int = CHUNK_MINUTES) -
             audio_path,
         ], stderr=subprocess.STDOUT).decode().strip()
         duration_sec = float(duration_str)
+    except FileNotFoundError:
+        raise RuntimeError(
+            "ffmpeg/ffprobe が見つかりません。Streamlit Cloud では packages.txt に "
+            "'ffmpeg' を追加してください(ローカルは brew install ffmpeg)"
+        )
     except (subprocess.CalledProcessError, ValueError) as e:
         raise RuntimeError(f"音声の長さ取得失敗(ffprobe): {e}")
 
@@ -650,10 +664,24 @@ def send_slack_notifications(staff_name: str, session_date, result: dict):
 # ── 4. Notion 蓄積 ────────────────────────────────
 
 def _rich_text(content: str, max_len: int = 2000) -> list:
-    """Notion rich_text 形式に変換(2000文字制限あり)"""
+    """Notion rich_text 形式に変換(1要素2000文字制限あり)"""
     if not content:
         return []
     return [{"type": "text", "text": {"content": str(content)[:max_len]}}]
+
+
+def _rich_text_long(content: str, max_total: int = 120000) -> list:
+    """長文を 2000文字ずつ複数の rich_text 要素に分割(文字起こし全文用)
+    Notion は1テキスト要素2000字までだが、配列に複数入れれば全文保存できる。
+    max_total で安全上限(約120,000字 ≒ 2時間分)を設ける。
+    """
+    if not content:
+        return []
+    s = str(content)[:max_total]
+    return [
+        {"type": "text", "text": {"content": s[i:i + 2000]}}
+        for i in range(0, len(s), 2000)
+    ]
 
 
 def save_to_notion(staff_name: str, session_date, result: dict) -> str:
@@ -713,7 +741,7 @@ def save_to_notion(staff_name: str, session_date, result: dict) -> str:
         "良かった点": {"rich_text": _rich_text(good_points)},
         "改善点": {"rich_text": _rich_text(improvements)},
         "疑問点": {"rich_text": _rich_text(questions)},
-        "文字起こし全文": {"rich_text": _rich_text(transcript)},
+        "文字起こし全文": {"rich_text": _rich_text_long(transcript)},
     }
 
     # セレクト系: 値があるときだけ設定(空だとAPIエラー)

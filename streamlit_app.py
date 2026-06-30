@@ -552,7 +552,7 @@ def render_footer():
     <div class="app-footer">
         <div class="footer-brand">KOSHIKI × La pilates</div>
         <div class="footer-tech">
-            <span>⚡ Powered by Gemini 2.0 Flash</span>
+            <span>⚡ Powered by Gemini 2.5 Flash</span>
             <span>🔒 Data is processed securely</span>
             <span>© 2026 KOSHIKI × La pilates</span>
         </div>
@@ -738,7 +738,7 @@ def main():
             est_high = max(3, (est_chunks // MAX_PARALLEL_WORKERS) + 3)
             mode_detail = (
                 f"{size_mb:.1f}MB → {CHUNK_MINUTES}分ごとに約{est_chunks}チャンクへ分割、"
-                f"{MAX_PARALLEL_WORKERS}並列+6秒間隔で文字起こし→評価生成"
+                f"{MAX_PARALLEL_WORKERS}並列で文字起こし→評価生成"
             )
 
         spinner_msg = (
