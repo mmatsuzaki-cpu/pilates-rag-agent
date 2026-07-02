@@ -1,0 +1,32 @@
+{
+  "S001": {
+    "name": "川越店",
+    "place_id": "ChIJV3l6uhzbGGARD8POoHpbw1g",
+    "count": 145,
+    "rating": 4.8
+  },
+  "S002": {
+    "name": "大宮店",
+    "place_id": "ChIJ78P0S3nBGGARVpGbu3VAYjs",
+    "count": 205,
+    "rating": 4.9
+  },
+  "S003": {
+    "name": "高崎店",
+    "place_id": "ChIJD0iEzhCTHmARH21BDOxRnlo",
+    "count": 102,
+    "rating": 4.9
+  },
+  "S004": {
+    "name": "神戸元町店",
+    "place_id": "ChIJmWX4TACPAGARxniTOMsdP8c",
+    "count": 246,
+    "rating": 4.9
+  },
+  "S005": {
+    "name": "西宮北口店",
+    "place_id": "ChIJvcS0uxjzAGARtUlujQlCBQs",
+    "count": 100,
+    "rating": 4.9
+  }
+}

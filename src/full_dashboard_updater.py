@@ -334,12 +334,11 @@ def main():
         update_contract_rate(sh, summary)
         print("\n📉 解約率更新")
         update_cancel_rate(sh, summary)
-        print("\n⭐ 口コミ更新")
-        update_reviews(sh)
 
-        # 月初(1-3日)は念のため前月の確定値も再更新(集計表が後から更新される可能性)
-        # API quota切れになっても全体は落とさない(翌日の実行でリカバーされる)
-        if now.day <= 3:
+        # 月初(1-5日)は念のため前月の確定値も再更新(集計表が後から更新される可能性)
+        # 口コミ更新より先に実行する(2026-07-02: 口コミ側の例外で前月再更新が
+        # 一度も走らず6月確定値が3店舗ズレたまま残った障害の再発防止)
+        if now.day <= 5:
             prev_year, prev_month = (target_year, target_month - 1) if target_month > 1 else (target_year - 1, 12)
             print(f"\n📥 月初なので前月({prev_year}年{prev_month}月)の確定値も再更新")
             try:
@@ -349,6 +348,12 @@ def main():
                     update_cancel_rate(sh, prev_summary)
             except Exception as e:
                 print(f"⚠️ 前月再更新スキップ ({e})")
+
+        print("\n⭐ 口コミ更新")
+        try:
+            update_reviews(sh)
+        except Exception as e:
+            print(f"⚠️ 口コミ更新失敗(継続): {e}")
 
     print("\n🎉 完了!")
     return 0

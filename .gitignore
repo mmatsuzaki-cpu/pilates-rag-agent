@@ -3,7 +3,6 @@ config/credentials.json
 config/slack_bot_token.txt
 config/slack_webhook.txt
 config/.env
-config/place_ids.json
 *.json.backup
 
 # Runtime data
