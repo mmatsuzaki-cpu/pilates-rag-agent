@@ -5,7 +5,7 @@
 
 set -e
 PROJECT_DIR="/Users/user/projects/pilates-rag-agent"
-ICLOUD_BACKUP="/Users/user/Library/Mobile Documents/com~apple~CloudDocs/AIフォルダ/pilates-rag-agent-backup"
+ICLOUD_BACKUP="/Users/user/Library/Mobile Documents/com~apple~CloudDocs/AIフォルダ/ピラティス事業/pilates-rag-agent-backup"
 LOG="$PROJECT_DIR/output/logs/backup_$(date +%Y-%m-%d).log"
 mkdir -p "$PROJECT_DIR/output/logs"
 
