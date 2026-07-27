@@ -7,6 +7,7 @@ config/.env
 
 # Runtime data
 data/*.json
+data/daily_snapshots/
 output/logs/*.log
 
 # Python

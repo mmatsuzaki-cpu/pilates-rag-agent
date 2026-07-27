@@ -24,14 +24,15 @@
     python3 src/alert_sender.py --report end         # 月末報告(webhookテキスト)
 """
 
+import json
 import os
 import sys
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from common import (
-    STORES, SPREADSHEET_ID, get_gspread_client,
+    STORES, SPREADSHEET_ID, PROJECT_ROOT, get_gspread_client,
     slack_webhook_send, slack_bot_token, slack_post_message,
 )
 from store_summary_reader import get_all_stores_summary
@@ -186,46 +187,119 @@ def resolve_report_channel() -> str:
     return ""
 
 
-def _agg_to_dashboard_data(summary: dict, title: str, subtitle: str, as_of: str) -> dict:
-    """alert_sender の集計(summary)を dashboard_render.py 形式に変換
-    summary[sid] = {contract_rate, contracts, newcomers, members, cancels,
-                    referrals, reviews:{google, hpb}}
-    契約率の色分けは contracts/newcomers ベース(build_message と同じ分子分母)
-    """
-    name_by_id = {s["id"]: s["name"] for s in STORES}
-    stores = []
-    tot = {"cnum": 0, "cden": 0, "members": 0, "newcomers": 0,
-           "cancels": 0, "referrals": 0, "google": 0, "hpb": 0}
+# ── 前日比スナップショット (2026-06-04 追加) ───────────────────
+# 会員数はスナップショット、新規/契約/解約/紹介/口コミは当月累計のため、
+# 「前日比」= 今日の値 − 直近(前日)スナップショットの値。
+# 日次スナップショットを data/daily_snapshots/YYYY-MM-DD.json に保存し、
+# 翌日以降に読み込んで差分を計算する。
+_SNAP_KEYS = ("members", "newcomers", "contracts", "cancels", "referrals", "google", "hpb")
+
+
+def _snapshot_dir():
+    d = PROJECT_ROOT / "data" / "daily_snapshots"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _save_snapshot(summary: dict, date_str: str):
+    """当日の集計をスナップショット保存 (前日比の基準として翌日以降に使う)"""
+    snap = {"date": date_str, "stores": {}}
     for sid in STORE_ORDER:
         if sid not in summary:
             continue
         d = summary[sid]
         rv = d.get("reviews", {"google": 0, "hpb": 0})
-        contracts = d.get("contracts", 0)
-        newcomers = d.get("newcomers", 0)
-        members = d.get("members", 0)
-        cancels = d.get("cancels", 0)
-        referrals = d.get("referrals", 0)
-        google = rv.get("google", 0)
-        hpb = rv.get("hpb", 0)
+        snap["stores"][sid] = {
+            "members": d.get("members", 0), "newcomers": d.get("newcomers", 0),
+            "contracts": d.get("contracts", 0), "cancels": d.get("cancels", 0),
+            "referrals": d.get("referrals", 0),
+            "google": rv.get("google", 0), "hpb": rv.get("hpb", 0),
+            # スタッフ別(前日比用): {名前: {newcomers, contracts}}
+            "staff": {m["name"]: {"newcomers": m.get("newcomers", 0),
+                                  "contracts": m.get("contracts", 0)}
+                      for m in d.get("staff", [])},
+        }
+    try:
+        (_snapshot_dir() / f"{date_str}.json").write_text(
+            json.dumps(snap, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"  💾 スナップショット保存: {date_str}")
+    except Exception as e:
+        print(f"  ⚠️ スナップショット保存失敗(無視): {e}")
+
+
+def _load_prev_snapshot(ref: datetime):
+    """ref日より前で最新のスナップショットを返す (無ければNone)"""
+    ref_str = ref.strftime("%Y-%m-%d")
+    try:
+        files = sorted(_snapshot_dir().glob("*.json"))
+    except Exception:
+        return None
+    prev = None
+    for f in files:
+        if f.stem < ref_str:   # YYYY-MM-DD は辞書順=日付順
+            prev = f
+    if not prev:
+        return None
+    try:
+        return json.loads(prev.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _agg_to_dashboard_data(summary: dict, title: str, subtitle: str, as_of: str,
+                           prev: dict = None) -> dict:
+    """alert_sender の集計(summary)を dashboard_render.py 形式に変換
+    summary[sid] = {contract_rate, contracts, newcomers, members, cancels,
+                    referrals, reviews:{google, hpb}}
+    契約率の色分けは contracts/newcomers ベース(build_message と同じ分子分母)
+    prev: 前日スナップショット(あれば各KPIに前日比 delta を付与)
+    """
+    name_by_id = {s["id"]: s["name"] for s in STORES}
+    prev_stores = (prev or {}).get("stores", {})
+    stores = []
+    tot = {"cnum": 0, "cden": 0, "members": 0, "newcomers": 0,
+           "cancels": 0, "referrals": 0, "google": 0, "hpb": 0}
+    tot_delta = {k: 0 for k in _SNAP_KEYS}
+    have_total_delta = False
+    for sid in STORE_ORDER:
+        if sid not in summary:
+            continue
+        d = summary[sid]
+        rv = d.get("reviews", {"google": 0, "hpb": 0})
+        cur = {
+            "members": d.get("members", 0), "newcomers": d.get("newcomers", 0),
+            "contracts": d.get("contracts", 0), "cancels": d.get("cancels", 0),
+            "referrals": d.get("referrals", 0),
+            "google": rv.get("google", 0), "hpb": rv.get("hpb", 0),
+        }
+        # 前日比: この店舗の前日スナップショットがあれば差分
+        delta = None
+        pv = prev_stores.get(sid)
+        if pv is not None:
+            delta = {k: cur[k] - pv.get(k, 0) for k in _SNAP_KEYS}
+            for k in _SNAP_KEYS:
+                tot_delta[k] += cur[k] - pv.get(k, 0)
+            have_total_delta = True
         stores.append({
             "name": name_by_id.get(sid, d.get("name", sid)),
-            "contract": {"num": contracts, "den": newcomers},
-            "members": members,
-            "newcomers": newcomers,
-            "cancels": cancels,
-            "referrals": referrals,
-            "google": google,
-            "hpb": hpb,
+            "contract": {"num": cur["contracts"], "den": cur["newcomers"]},
+            "members": cur["members"],
+            "newcomers": cur["newcomers"],
+            "cancels": cur["cancels"],
+            "referrals": cur["referrals"],
+            "google": cur["google"],
+            "hpb": cur["hpb"],
+            "delta": delta,
         })
-        tot["cnum"] += contracts; tot["cden"] += newcomers
-        tot["members"] += members; tot["newcomers"] += newcomers
-        tot["cancels"] += cancels; tot["referrals"] += referrals
-        tot["google"] += google; tot["hpb"] += hpb
+        tot["cnum"] += cur["contracts"]; tot["cden"] += cur["newcomers"]
+        tot["members"] += cur["members"]; tot["newcomers"] += cur["newcomers"]
+        tot["cancels"] += cur["cancels"]; tot["referrals"] += cur["referrals"]
+        tot["google"] += cur["google"]; tot["hpb"] += cur["hpb"]
     return {
         "title": title,
         "subtitle": subtitle,
         "as_of": as_of,
+        "prev_date": (prev or {}).get("date") if have_total_delta else None,
         "total": {
             "contract": {"num": tot["cnum"], "den": tot["cden"]},
             "members": tot["members"],
@@ -234,33 +308,47 @@ def _agg_to_dashboard_data(summary: dict, title: str, subtitle: str, as_of: str)
             "referrals": tot["referrals"],
             "google": tot["google"],
             "hpb": tot["hpb"],
+            "delta": tot_delta if have_total_delta else None,
         },
         "stores": stores,
     }
 
 
-def _agg_to_staff_data(summary: dict, title: str, subtitle: str, as_of: str) -> dict:
+def _agg_to_staff_data(summary: dict, title: str, subtitle: str, as_of: str,
+                       prev: dict = None) -> dict:
     """スタッフ別契約率ダッシュボード用データに変換 (2枚目の画像)
     各店舗カードに、その店舗のスタッフ別契約率(契約数/新規数)を新規数の多い順に並べる。
     summary[sid]["staff"] = [{name, newcomers, contracts}] (store_summary_reader が抽出)
+    prev: 前日スナップショット(あれば各スタッフに前日比 dn=新規差/dc=契約差 を付与)
     """
     name_by_id = {s["id"]: s["name"] for s in STORES}
+    prev_stores = (prev or {}).get("stores", {})
     stores = []
+    have_prev = False
     for sid in STORE_ORDER:
         if sid not in summary:
             continue
         d = summary[sid]
-        staff = [
-            {"name": m["name"], "num": m.get("contracts", 0), "den": m.get("newcomers", 0)}
-            for m in d.get("staff", [])
-        ]
+        pv_staff = (prev_stores.get(sid) or {}).get("staff") if prev_stores.get(sid) else None
+        if pv_staff is not None:
+            have_prev = True
+        staff = []
+        for m in d.get("staff", []):
+            item = {"name": m["name"], "num": m.get("contracts", 0), "den": m.get("newcomers", 0)}
+            if pv_staff is not None:
+                p = pv_staff.get(m["name"], {"newcomers": 0, "contracts": 0})
+                item["dn"] = m.get("newcomers", 0) - p.get("newcomers", 0)  # 新規 前日比
+                item["dc"] = m.get("contracts", 0) - p.get("contracts", 0)  # 契約 前日比
+            staff.append(item)
         staff.sort(key=lambda x: (-x["den"], -x["num"]))  # 新規数(担当数)の多い順
         stores.append({
             "name": name_by_id.get(sid, d.get("name", sid)),
             "contract": {"num": d.get("contracts", 0), "den": d.get("newcomers", 0)},
             "staff": staff,
         })
-    return {"title": title, "subtitle": subtitle, "as_of": as_of, "stores": stores}
+    return {"title": title, "subtitle": subtitle, "as_of": as_of,
+            "prev_date": (prev or {}).get("date") if have_prev else None,
+            "stores": stores}
 
 
 def _slack_upload_png(channel_id: str, png_paths, comment: str = "") -> bool:
@@ -471,11 +559,17 @@ def main():
 
     # ── daily: 画像ダッシュボード ─────────────────────────────
     if report_type == "daily":
+        # 前日比: 基準日より前で最新のスナップショットを読み込む
+        prev_snap = _load_prev_snapshot(ref)
+        if prev_snap:
+            print(f"  📈 前日比の基準: {prev_snap.get('date')} のスナップショット")
+        else:
+            print("  ℹ️ 前日スナップショットなし → 前日比は非表示(翌日以降に表示)")
         subtitle = f"新規実績　{ref.month}月の集計({ref.day}日時点)"
         staff_subtitle = f"スタッフ別契約率　{ref.month}月({ref.day}日時点)"
         as_of_label = f"{ref.month}/{ref.day} 時点"
-        store_data = _agg_to_dashboard_data(summary, "La pilates", subtitle, as_of_label)
-        staff_data = _agg_to_staff_data(summary, "La pilates", staff_subtitle, as_of_label)
+        store_data = _agg_to_dashboard_data(summary, "La pilates", subtitle, as_of_label, prev=prev_snap)
+        staff_data = _agg_to_staff_data(summary, "La pilates", staff_subtitle, as_of_label, prev=prev_snap)
 
         mention = "" if "--silent" in sys.argv else "<!channel>\n"
         head = (f"{mention}:cherry_blossom: *KOSHIKIラピラティス新規実績* :cherry_blossom:\n"
@@ -493,6 +587,9 @@ def main():
                 print(f"  {st['name']}: {names or '実績データなし'}")
             print("=" * 60)
             return 0
+
+        # 前日比の基準として当日スナップショットを保存 (--no-slackでも保存=seed用)
+        _save_snapshot(summary, ref.strftime("%Y-%m-%d"))
 
         if "--no-slack" in sys.argv:
             print("📵 チャンネル送信スキップ(--no-slack)")

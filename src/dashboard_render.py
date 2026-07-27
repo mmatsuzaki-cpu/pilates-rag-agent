@@ -106,14 +106,29 @@ def rate_kpi(no, label, num, den):
       </div>"""
 
 
-def num_kpi(no, label, value, unit="", extra=""):
+def _delta_chip(delta, good_when="up"):
+    """前日比チップ。delta=None → 非表示(前日データ無し)。
+    good_when='up' → 増加が良い(緑)、'down' → 減少が良い(緑・解約数用)。
+    """
+    if delta is None:
+        return ""
+    if delta == 0:
+        return '<span class="dlt dlt-zero">前日比 ±0</span>'
+    up = delta > 0
+    good = up if good_when == "up" else (not up)
+    cls = "dlt-good" if good else "dlt-bad"
+    arrow = "▲" if up else "▼"
+    return f'<span class="dlt {cls}">前日比 {arrow}{abs(delta)}</span>'
+
+
+def num_kpi(no, label, value, unit="", extra="", delta=None, good_when="up"):
     """数値を表示する行 (会員数/新規数/解約数/紹介数/口コミ)"""
     return f"""
       <div class="kpi">
         <div class="kpi-label"><span class="kpi-no">{no}</span>{label}</div>
         <div class="kpi-val">
           <span class="num">{value}</span><span class="unit">{unit}</span>
-          {extra}
+          {_delta_chip(delta, good_when)}{extra}
         </div>
       </div>"""
 
@@ -125,6 +140,7 @@ def store_card(s):
     cancel_rate = (s["cancels"] / s["members"] * 100) if s["members"] else 0
     cc = "cancel-warn" if s["cancels"] > 0 else "cancel-ok"
     cancel_extra = f'<span class="cancel {cc}">解約率 {cancel_rate:.1f}%</span>'
+    dl = s.get("delta") or {}   # 前日比 (無ければ空dict → 各値 None で非表示)
     return f"""
     <div class="card">
       <div class="card-head">
@@ -132,27 +148,42 @@ def store_card(s):
       </div>
       <div class="kpis">
         {rate_kpi(1, "契約率", s['contract']['num'], s['contract']['den'])}
-        {num_kpi(2, "会員数", f"{s['members']:,}", "人")}
-        {num_kpi(3, "新規数", s['newcomers'], "人")}
-        {num_kpi(4, "解約数", s['cancels'], "人", cancel_extra)}
-        {num_kpi(5, "紹介数", s['referrals'], "人")}
-        {num_kpi(6, "Google口コミ", s['google'], "件")}
-        {num_kpi(7, "HPB口コミ", s['hpb'], "件")}
+        {num_kpi(2, "会員数", f"{s['members']:,}", "人", delta=dl.get("members"))}
+        {num_kpi(3, "新規数", s['newcomers'], "人", delta=dl.get("newcomers"))}
+        {num_kpi(4, "解約数", s['cancels'], "人", cancel_extra, delta=dl.get("cancels"), good_when="down")}
+        {num_kpi(5, "紹介数", s['referrals'], "人", delta=dl.get("referrals"))}
+        {num_kpi(6, "Google口コミ", s['google'], "件", delta=dl.get("google"))}
+        {num_kpi(7, "HPB口コミ", s['hpb'], "件", delta=dl.get("hpb"))}
       </div>
     </div>"""
 
 
 # ---- 合計ブロック ------------------------------------------------
+def _tdelta(delta, good_when="up"):
+    """合計ブロック(濃色背景)用の前日比表示"""
+    if delta is None:
+        return ""
+    if delta == 0:
+        return '<div class="tcell-dlt tdlt-zero">前日比 ±0</div>'
+    up = delta > 0
+    good = up if good_when == "up" else (not up)
+    cls = "tdlt-good" if good else "tdlt-bad"
+    arrow = "▲" if up else "▼"
+    return f'<div class="tcell-dlt {cls}">前日比 {arrow}{abs(delta)}</div>'
+
+
 def total_block(t):
     cancel_rate = (t["cancels"] / t["members"] * 100) if t["members"] else 0
     cls = rate_class(t["contract"]["num"], t["contract"]["den"])
+    dl = t.get("delta") or {}
 
-    def num_cell(label, value, unit=""):
+    def num_cell(label, value, unit="", delta=None, good_when="up"):
         return f"""
         <div class="tcell">
           <div class="tcell-label">{label}</div>
           <div class="tcell-rate">{value}</div>
           <div class="tcell-frac">{unit}</div>
+          {_tdelta(delta, good_when)}
         </div>"""
     return f"""
     <div class="total">
@@ -165,12 +196,12 @@ def total_block(t):
           <div class="tcell-rate rate-{cls}">{rate_label(t['contract']['num'], t['contract']['den'])}</div>
           <div class="tcell-frac">({t['contract']['num']}/{t['contract']['den']})</div>
         </div>
-        {num_cell("会員数", f"{t['members']:,}", "人")}
-        {num_cell("新規数", t['newcomers'], "人")}
-        {num_cell("解約数", t['cancels'], f"解約率 {cancel_rate:.1f}%")}
-        {num_cell("紹介数", t['referrals'], "人")}
-        {num_cell("Google口コミ", t['google'], "件")}
-        {num_cell("HPB口コミ", t['hpb'], "件")}
+        {num_cell("会員数", f"{t['members']:,}", "人", delta=dl.get("members"))}
+        {num_cell("新規数", t['newcomers'], "人", delta=dl.get("newcomers"))}
+        {num_cell("解約数", t['cancels'], f"解約率 {cancel_rate:.1f}%", delta=dl.get("cancels"), good_when="down")}
+        {num_cell("紹介数", t['referrals'], "人", delta=dl.get("referrals"))}
+        {num_cell("Google口コミ", t['google'], "件", delta=dl.get("google"))}
+        {num_cell("HPB口コミ", t['hpb'], "件", delta=dl.get("hpb"))}
       </div>
     </div>"""
 
@@ -215,6 +246,11 @@ def _css(s):
   .tcell-label {{ font-size:13px; opacity:.85; margin-bottom:6px; font-weight:600; }}
   .tcell-rate {{ font-size:30px; font-weight:900; line-height:1; font-family:"Noto Serif CJK JP",serif; }}
   .tcell-frac {{ font-size:13px; opacity:.8; margin-top:4px; }}
+  .tcell-dlt {{ display:inline-block; margin-top:7px; font-size:12px; font-weight:800;
+    padding:2px 9px; border-radius:999px; }}
+  .tdlt-good {{ background:rgba(191,230,200,.28); color:#DFF3E4; }}
+  .tdlt-bad  {{ background:rgba(242,179,168,.30); color:#FBDCD5; }}
+  .tdlt-zero {{ background:rgba(255,255,255,.16); color:#EDE7DC; }}
   .total .rate-good {{ color:#BFE6C8; }}
   .total .rate-mid  {{ color:#F2CE8F; }}
   .total .rate-zero {{ color:#F2B3A8; }}
@@ -243,6 +279,11 @@ def _css(s):
   .cancel {{ font-size:12px; font-weight:700; padding:2px 9px; border-radius:999px; margin-left:4px; }}
   .cancel-ok {{ background:#EAF1EB; color:var(--good); }}
   .cancel-warn {{ background:#F7E2DD; color:var(--zero); }}
+  /* 前日比チップ */
+  .dlt {{ font-size:12px; font-weight:800; padding:2px 9px; border-radius:999px; margin-left:6px; white-space:nowrap; }}
+  .dlt-good {{ background:#EAF1EB; color:var(--good); }}
+  .dlt-bad  {{ background:#F7E2DD; color:var(--zero); }}
+  .dlt-zero {{ background:#EFEAE0; color:var(--none); }}
   /* staff(スタッフ別契約率) */
   .store-rate {{ margin-left:auto; font-size:20px; font-weight:900; font-family:"Noto Serif CJK JP",serif; line-height:1; }}
   .store-frac {{ font-size:13px; color:var(--sub); margin-left:4px; font-weight:600; }}
@@ -273,11 +314,27 @@ def build_html(d):
   </div>
   {total_block(d['total'])}
   <div class="grid">{cards}</div>
-  <div class="footer">契約率の色分け　緑=50%以上 / 橙=1〜49% / 赤=0% / 灰=母数なし</div>
+  <div class="footer">契約率の色分け　緑=50%以上 / 橙=1〜49% / 赤=0% / 灰=母数なし{_prev_note(d)}</div>
 </body></html>"""
 
 
+def _prev_note(d):
+    pd = d.get("prev_date")
+    return f"　｜　前日比 = {pd} 比" if pd else ""
+
+
 # ---- スタッフ別契約率カード --------------------------------------
+def _staff_delta(m):
+    """スタッフ行の前日比チップ (契約→新規の順・変化があるものだけ表示)"""
+    dc, dn = m.get("dc"), m.get("dn")
+    chips = []
+    if dc:
+        chips.append(f'<span class="dlt {"dlt-good" if dc > 0 else "dlt-bad"}">契約{"▲" if dc > 0 else "▼"}{abs(dc)}</span>')
+    if dn:
+        chips.append(f'<span class="dlt {"dlt-good" if dn > 0 else "dlt-bad"}">新規{"▲" if dn > 0 else "▼"}{abs(dn)}</span>')
+    return "".join(chips)
+
+
 def staff_card(s_):
     emoji = signal_emoji(s_["contract"]["num"], s_["contract"]["den"])
     cls = rate_class(s_["contract"]["num"], s_["contract"]["den"])
@@ -285,7 +342,8 @@ def staff_card(s_):
     if staff:
         rows = "".join(
             f'<div class="srow"><span class="sname">{m["name"]}</span>'
-            f'<span class="sval"><span class="rate rate-{rate_class(m["num"], m["den"])}">{rate_label(m["num"], m["den"])}</span>'
+            f'<span class="sval">{_staff_delta(m)}'
+            f'<span class="rate rate-{rate_class(m["num"], m["den"])}">{rate_label(m["num"], m["den"])}</span>'
             f'<span class="frac">({m["num"]}/{m["den"]})</span></span></div>'
             for m in staff
         )
@@ -317,7 +375,7 @@ def build_staff_html(d):
     <span class="asof">{d['as_of']}</span>
   </div>
   <div class="grid">{cards}</div>
-  <div class="footer">契約率の色分け　緑=50%以上 / 橙=1〜49% / 赤=0% / 灰=母数なし　|　数字 = 契約/新規</div>
+  <div class="footer">契約率の色分け　緑=50%以上 / 橙=1〜49% / 赤=0% / 灰=母数なし　|　数字 = 契約/新規{_prev_note(d)}</div>
 </body></html>"""
 
 
