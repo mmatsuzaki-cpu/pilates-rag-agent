@@ -277,6 +277,10 @@ def _agg_to_dashboard_data(summary: dict, title: str, subtitle: str, as_of: str,
         pv = prev_stores.get(sid)
         if pv is not None:
             delta = {k: cur[k] - pv.get(k, 0) for k in _SNAP_KEYS}
+            # 契約率(pt)の前日比 = round(今日率) − round(前日率)
+            t_rate = (cur["contracts"] / cur["newcomers"] * 100) if cur["newcomers"] else 0
+            p_rate = (pv.get("contracts", 0) / pv.get("newcomers", 0) * 100) if pv.get("newcomers", 0) else 0
+            delta["contract_pt"] = round(t_rate) - round(p_rate)
             for k in _SNAP_KEYS:
                 tot_delta[k] += cur[k] - pv.get(k, 0)
             have_total_delta = True
@@ -295,6 +299,13 @@ def _agg_to_dashboard_data(summary: dict, title: str, subtitle: str, as_of: str,
         tot["members"] += cur["members"]; tot["newcomers"] += cur["newcomers"]
         tot["cancels"] += cur["cancels"]; tot["referrals"] += cur["referrals"]
         tot["google"] += cur["google"]; tot["hpb"] += cur["hpb"]
+    if have_total_delta:
+        # 全店 契約率(pt)前日比: 今日の全店率 − 前日スナップショット全店率
+        prev_c = sum(v.get("contracts", 0) for v in prev_stores.values())
+        prev_n = sum(v.get("newcomers", 0) for v in prev_stores.values())
+        t_rate = (tot["cnum"] / tot["cden"] * 100) if tot["cden"] else 0
+        p_rate = (prev_c / prev_n * 100) if prev_n else 0
+        tot_delta["contract_pt"] = round(t_rate) - round(p_rate)
     return {
         "title": title,
         "subtitle": subtitle,
