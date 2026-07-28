@@ -1,12 +1,14 @@
-name: 📊 ピラティス Daily 実績配信 (遅延バックアップ)
+name: 📊 ピラティス Daily 実績配信
 
-# ⚠️ 主役は Mac の LaunchAgent (22:00 JST / scripts/run_daily_backup.sh)。
-#    GitHub Actions の予約実行は無料枠だと数時間遅延し夜中着弾になるため、
-#    ここは「Macが動けなかった日の保険」として残す。
-#    alert_sender.py の冪等性チェック((N日時点)marker)で二重送信は防止される。
+# 主役: 外部スケジューラ(cron-job.org)が 22:00 JST に workflow_dispatch を
+#       GitHub API 経由で叩いて即時実行する(GitHub の schedule 予約は無料枠だと
+#       数時間遅延し夜中着弾になるため、外部トリガーで確実な22時配信にする)。
+# schedule('7 13 * * *') は cron-job.org が落ちた日の遅延バックアップとして残す。
+# Mac LaunchAgent は不安定(ネット断/スリープ)のため廃止(2026-07-29)。
+# alert_sender.py の冪等性チェック((N日時点)marker)で二重送信は防止される。
 on:
   schedule:
-    - cron: '7 13 * * *'   # 22:07 JST 予約 (実際は遅延・バックアップ用途)
+    - cron: '7 13 * * *'   # 22:07 JST 予約 (遅延バックアップ用途)
   workflow_dispatch:
 
 concurrency:
