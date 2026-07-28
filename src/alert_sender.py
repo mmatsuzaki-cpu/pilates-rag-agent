@@ -187,22 +187,29 @@ def resolve_report_channel() -> str:
     return ""
 
 
-# ── 前日比スナップショット (2026-06-04 追加) ───────────────────
+# ── 前日比スナップショット (2026-06-04追加 / 2026-07-29 スプシ保存に変更) ──
 # 会員数はスナップショット、新規/契約/解約/紹介/口コミは当月累計のため、
 # 「前日比」= 今日の値 − 直近(前日)スナップショットの値。
-# 日次スナップショットを data/daily_snapshots/YYYY-MM-DD.json に保存し、
-# 翌日以降に読み込んで差分を計算する。
+# ⚠️ GitHub Actions は stateless でローカルファイルが永続しないため(前日比が
+#    貯まらない不具合)、OUTPUT スプシの専用タブに保存(GitHub/Mac 両対応)。
 _SNAP_KEYS = ("members", "newcomers", "contracts", "cancels", "referrals", "google", "hpb")
+_SNAP_SHEET = "_前日比スナップショット"
 
 
-def _snapshot_dir():
-    d = PROJECT_ROOT / "data" / "daily_snapshots"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+def _snapshot_ws(gc=None):
+    """スナップショット保存タブ(無ければ作成)"""
+    if gc is None:
+        gc = get_gspread_client()
+    sh = gc.open_by_key(SPREADSHEET_ID)
+    try:
+        return sh.worksheet(_SNAP_SHEET)
+    except Exception:
+        ws = sh.add_worksheet(title=_SNAP_SHEET, rows=500, cols=2)
+        ws.update("A1:B1", [["date", "json"]])
+        return ws
 
 
-def _save_snapshot(summary: dict, date_str: str):
-    """当日の集計をスナップショット保存 (前日比の基準として翌日以降に使う)"""
+def _build_snapshot(summary: dict, date_str: str) -> dict:
     snap = {"date": date_str, "stores": {}}
     for sid in STORE_ORDER:
         if sid not in summary:
@@ -219,31 +226,46 @@ def _save_snapshot(summary: dict, date_str: str):
                                   "contracts": m.get("contracts", 0)}
                       for m in d.get("staff", [])},
         }
+    return snap
+
+
+def _save_snapshot(summary: dict, date_str: str, gc=None):
+    """当日の集計をスプシのスナップショットタブに保存(同日はupsert)"""
+    snap = _build_snapshot(summary, date_str)
+    blob = json.dumps(snap, ensure_ascii=False)
     try:
-        (_snapshot_dir() / f"{date_str}.json").write_text(
-            json.dumps(snap, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"  💾 スナップショット保存: {date_str}")
+        ws = _snapshot_ws(gc)
+        rows = ws.get_all_values()
+        target = None
+        for i, r in enumerate(rows[1:], start=2):
+            if r and r[0] == date_str:
+                target = i
+                break
+        if target:
+            ws.update(f"A{target}:B{target}", [[date_str, blob]])
+        else:
+            ws.append_row([date_str, blob], value_input_option="RAW")
+        print(f"  💾 スナップショット保存(スプシ): {date_str}")
     except Exception as e:
         print(f"  ⚠️ スナップショット保存失敗(無視): {e}")
 
 
-def _load_prev_snapshot(ref: datetime):
+def _load_prev_snapshot(ref: datetime, gc=None):
     """ref日より前で最新のスナップショットを返す (無ければNone)"""
     ref_str = ref.strftime("%Y-%m-%d")
     try:
-        files = sorted(_snapshot_dir().glob("*.json"))
-    except Exception:
-        return None
-    prev = None
-    for f in files:
-        if f.stem < ref_str:   # YYYY-MM-DD は辞書順=日付順
-            prev = f
-    if not prev:
-        return None
-    try:
-        return json.loads(prev.read_text(encoding="utf-8"))
-    except Exception:
-        return None
+        ws = _snapshot_ws(gc)
+        rows = ws.get_all_values()
+        prev = None
+        for r in rows[1:]:
+            if r and r[0] and r[0] < ref_str:   # YYYY-MM-DD は辞書順=日付順
+                if prev is None or r[0] > prev[0]:
+                    prev = r
+        if prev and len(prev) > 1 and prev[1]:
+            return json.loads(prev[1])
+    except Exception as e:
+        print(f"  ⚠️ 前日スナップショット読込失敗(無視): {e}")
+    return None
 
 
 def _agg_to_dashboard_data(summary: dict, title: str, subtitle: str, as_of: str,
@@ -468,7 +490,7 @@ def already_sent_today(channel_id: str) -> bool:
         return False
     try:
         import requests
-        now = datetime.now()
+        now = _now_jst()
         today_start = datetime(now.year, now.month, now.day)
         # UTC/JST のズレを過去24h oldest で吸収
         oldest = min(today_start.timestamp(), now.timestamp() - 22 * 3600)
@@ -488,6 +510,13 @@ def already_sent_today(channel_id: str) -> bool:
     except Exception as e:
         print(f"  ⚠️ 冪等性チェック失敗(続行): {e}")
         return False
+
+
+def _now_jst() -> datetime:
+    """GitHub Actions(UTC)でも Mac(JST)でも常に JST の現在時刻を返す。
+    GitHub の naive datetime.now() は UTC で日付が1日ズレるため必須。
+    """
+    return datetime.utcnow() + timedelta(hours=9)
 
 
 def make_label(report_type: str, ref: datetime = None) -> str:
@@ -527,10 +556,10 @@ def main():
             except ValueError:
                 print("  ⚠️ --as-of 日付パース失敗、今日を使用")
 
-    ref = as_of_override if as_of_override else datetime.now()
+    ref = as_of_override if as_of_override else _now_jst()
 
     # 取得対象月の決定
-    now = datetime.now()
+    now = _now_jst()
     if report_type == "end" and now.day == 1 and not as_of_override:
         # 月初に走る月末レポート → 前月の値を取得
         target_year, target_month = (now.year, now.month - 1) if now.month > 1 else (now.year - 1, 12)
