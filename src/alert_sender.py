@@ -40,7 +40,7 @@ from store_summary_reader import get_all_stores_summary
 # 「ラピラティス実績全部」スプシ(口コミシートあり)
 DASHBOARD_SSID = "1K0_PP4mGQBHzzKYOo2E8bulcwSJJVShS8JK875bdoZA"
 
-STORE_ORDER = ["S001", "S002", "S003", "S004", "S005"]
+STORE_ORDER = ["S001", "S002", "S003", "S004", "S005", "S006"]
 
 
 def safe_int(v):
@@ -84,6 +84,10 @@ def get_reviews_from_kuchikomi(gc):
 
     result = {}
     for sid in STORE_ORDER:
+        # 口コミシートに未登録の店(例: 所沢=新店)は 0 で返す
+        if sid not in google_rows:
+            result[sid] = {'google': 0, 'hpb': 0}
+            continue
         g_row = v[google_rows[sid]] if google_rows[sid] < len(v) else []
         h_row = v[hpb_rows[sid]]    if hpb_rows[sid]    < len(v) else []
         result[sid] = {'google': latest_value(g_row), 'hpb': latest_value(h_row)}

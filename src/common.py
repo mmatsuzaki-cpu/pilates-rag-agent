@@ -26,6 +26,9 @@ STORES = [
      "sales_target": 5_000_000, "profit_target": 1_500_000},
     {"id": "S005", "name": "西宮北口店", "machines": 6, "staff": 3,
      "sales_target": 3_000_000, "profit_target": 1_000_000},
+    # 所沢店: 2026-08 オープン(2026-07-29 追加)。machines/staff/target は暫定・要確認
+    {"id": "S006", "name": "所沢店",     "machines": 6, "staff": 4,
+     "sales_target": 3_000_000, "profit_target": 1_000_000},
 ]
 
 
