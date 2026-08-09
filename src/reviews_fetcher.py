@@ -29,6 +29,7 @@ HPB_URLS = {
     "S003": "https://beauty.hotpepper.jp/kr/slnH000774690/",
     "S004": "https://beauty.hotpepper.jp/kr/slnH000740308/",
     "S005": "https://beauty.hotpepper.jp/kr/slnH000777989/",
+    "S006": "https://beauty.hotpepper.jp/kr/slnH000820108/",  # 所沢(2026-08〜)
 }
 
 
@@ -132,8 +133,8 @@ def main():
         except ValueError:
             latest_col = len(khdr)
         col_1idx = latest_col  # 「前月比」の左の列(1-indexed) = latest_col(0-indexed の index)
-        google_rows = {"S001": 2, "S002": 3, "S003": 4, "S004": 5, "S005": 6}  # 1-indexed
-        hpb_rows    = {"S001": 7, "S002": 8, "S003": 9, "S004": 10, "S005": 11}
+        google_rows = {"S001": 2, "S002": 3, "S003": 4, "S004": 5, "S005": 6, "S006": 17}  # 1-indexed
+        hpb_rows    = {"S001": 7, "S002": 8, "S003": 9, "S004": 10, "S005": 11, "S006": 18}
         n = 0
         for sid, c in counts.items():
             g, h = c["google"], c["hpb"]

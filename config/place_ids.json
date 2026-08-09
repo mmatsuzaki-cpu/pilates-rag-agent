@@ -28,5 +28,11 @@
     "place_id": "ChIJvcS0uxjzAGARtUlujQlCBQs",
     "count": 100,
     "rating": 4.9
+  },
+  "S006": {
+    "name": "所沢店",
+    "place_id": "ChIJpYJxElPdGGARBkE9Z9OqP8U",
+    "count": 4,
+    "rating": 0
   }
 }

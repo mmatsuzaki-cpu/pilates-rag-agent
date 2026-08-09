@@ -67,8 +67,8 @@ def get_reviews_from_kuchikomi(gc):
     except ValueError:
         latest_col = len(header) - 1
 
-    google_rows = {"S001": 1, "S002": 2, "S003": 3, "S004": 4, "S005": 5}  # 0-indexed
-    hpb_rows    = {"S001": 6, "S002": 7, "S003": 8, "S004": 9, "S005": 10}
+    google_rows = {"S001": 1, "S002": 2, "S003": 3, "S004": 4, "S005": 5, "S006": 16}  # 0-indexed
+    hpb_rows    = {"S001": 6, "S002": 7, "S003": 8, "S004": 9, "S005": 10, "S006": 17}
 
     def latest_value(row):
         """当月列(latest_col)から左へ走査し、最初の非空セルを返す。
