@@ -385,10 +385,11 @@ def main():
             print(f"  ✅ 質問返信: {kw}")
         time.sleep(1)
 
-    # 振り返り処理: 具体的フィードバック生成(2026-05-14〜)
-    # - feedback_builder で具体的なカウンセリング/クロージングFBを生成
+    # 振り返り処理: ① ai_feedback で松崎メソッドAI FBを生成
+    #             → 失敗時 ② feedback_builder のテンプレFBにフォールバック
     # - 末尾にノウハウリンクを追加(関連あれば)
-    from feedback_builder import build_detailed_feedback, extract_staff_name
+    from feedback_builder import build_detailed_feedback, extract_staff_name, extract_contract
+    from ai_feedback import build_ai_feedback
     user_cache = {}
     for r in reflections:
         text = r.get("text", "")
@@ -402,15 +403,29 @@ def main():
         if not staff_name:
             staff_name = "スタッフ"
 
-        # 具体的フィードバック生成
+        # キーワード抽出(AI FBの事例選別と関連ノウハウ検索の両方で使う)
+        kw = extract_concerns(text)
+
+        # ① 松崎メソッドAI FB(Gemini)
+        feedback_body = None
         try:
-            feedback_body = build_detailed_feedback(text, staff_name)
+            contract = extract_contract(text) or ""
+            leader_fb_db = os.environ.get("NOTION_LEADER_FB_DB_ID", "")
+            feedback_body = build_ai_feedback(text, staff_name, kw, leader_fb_db, contract)
+            if feedback_body:
+                print(f"  🤖 AI FB生成成功: {staff_name}")
         except Exception as e:
-            print(f"  ⚠️ FB生成失敗: {e}")
-            feedback_body = None
+            print(f"  ⚠️ AI FB生成失敗(テンプレFBへ): {e}")
+
+        # ② フォールバック: テンプレFB
+        if not feedback_body:
+            try:
+                feedback_body = build_detailed_feedback(text, staff_name)
+            except Exception as e:
+                print(f"  ⚠️ FB生成失敗: {e}")
+                feedback_body = None
 
         # 関連ノウハウ検索(従来機能を末尾に追加)
-        kw = extract_concerns(text)
         hits = search(knowledge_db, kw, 3) if kw else []
 
         # メッセージ組み立て
