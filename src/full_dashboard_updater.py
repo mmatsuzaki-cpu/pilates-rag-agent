@@ -31,13 +31,15 @@ from store_summary_reader import get_all_stores_summary
 DASHBOARD_SSID = "1K0_PP4mGQBHzzKYOo2E8bulcwSJJVShS8JK875bdoZA"  # ピラティス実績全部
 TAX_RATE = 1.10  # 税込→税抜 で /1.1
 
-# 店舗マスタ(画面の表示順:川越/大宮/神戸元町/高崎/西宮北口)
+# 店舗マスタ(画面の表示順:川越/大宮/神戸元町/高崎/西宮北口/所沢)
+# 2026-08-16: 所沢(S006)を追加。売上/サブスク/契約率/解約率/トライアルの各タブに列追加済み。
 STORE_ORDER = [
     ("S001", "川越"),
     ("S002", "大宮"),
     ("S004", "神戸元町"),
     ("S003", "高崎"),
     ("S005", "西宮北口"),
+    ("S006", "所沢"),
 ]
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
@@ -48,10 +50,10 @@ UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML,
 # ============================================
 def update_sales(sh, jisseki: dict):
     """売上(2026年度) シートの最新月行を更新
-    列構造:
-      A: 月ラベル(売上税込)   B-F: 5店舗 G: 合計
-      I: 月ラベル(売上税抜)   J-N: 5店舗 O: 合計
-      Q: 月ラベル(利益)      R-V: 5店舗 W: 合計
+    列構造(2026-08 所沢追加後):
+      A: 月ラベル(売上税込)   B-G: 6店舗 H: 合計
+      J: 月ラベル(売上税抜)   K-P: 6店舗 Q: 合計
+      S: 月ラベル(利益)      T-Y: 6店舗 Z: 合計
     """
     ws = sh.worksheet("売上(2026年度)")
     all_v = ws.get_all_values()
@@ -73,7 +75,7 @@ def update_sales(sh, jisseki: dict):
 
     # 売上税込のみ更新(税抜・利益・合計は保護=数式)
     updates = []
-    for col_idx, (sid, _) in enumerate(STORE_ORDER, start=2):  # B-F (税込)
+    for col_idx, (sid, _) in enumerate(STORE_ORDER, start=2):  # B-G (税込)
         if sid in jisseki:
             net = jisseki[sid]["sales"]  # 税抜
             gross = round(net * TAX_RATE)  # 税込
@@ -119,26 +121,27 @@ def update_contract_rate(sh, summary: dict):
                     "fields": "userEnteredFormat.numberFormat"
                 }
             }]})
-            ws.insert_row([target_label] + [""] * 15, avg_row, value_input_option="RAW")
+            ws.insert_row([target_label] + [""] * 18, avg_row, value_input_option="RAW")
             row_idx = avg_row
             # 直前の月行(avg_row - 1 が新規行になったので、その上= avg_row - 1 - 1)からフォーマットコピー
             src = avg_row - 2  # 0-indexed の直前月行
             sh.batch_update({"requests": [{
                 "copyPaste": {
                     "source": {"sheetId": sheet_id, "startRowIndex": src, "endRowIndex": src + 1,
-                               "startColumnIndex": 0, "endColumnIndex": 16},
+                               "startColumnIndex": 0, "endColumnIndex": 19},
                     "destination": {"sheetId": sheet_id, "startRowIndex": row_idx - 1, "endRowIndex": row_idx,
-                                    "startColumnIndex": 0, "endColumnIndex": 16},
+                                    "startColumnIndex": 0, "endColumnIndex": 19},
                     "pasteType": "PASTE_FORMAT"
                 }
             }]})
             print(f"  ➕ 契約率 {target_label}行 新規挿入(平均行の上, 罫線継承)")
         else:
-            ws.append_row([target_label] + [""] * 15, value_input_option="USER_ENTERED")
+            ws.append_row([target_label] + [""] * 18, value_input_option="USER_ENTERED")
             row_idx = len(ws.get_all_values())
             print(f"  ➕ 契約率 {target_label}行 末尾追加")
 
-    col_map = {"S001": 2, "S002": 5, "S004": 8, "S003": 11, "S005": 14}
+    # 1店舗3列(新規数/入会数/契約率)。2026-08 所沢(Q:S)追加
+    col_map = {"S001": 2, "S002": 5, "S004": 8, "S003": 11, "S005": 14, "S006": 17}
     for sid, base_col in col_map.items():
         if sid not in summary: continue
         d = summary[sid]
@@ -164,31 +167,31 @@ def update_cancel_rate(sh, summary: dict):
     if not row_idx:
         # 末尾追加 + 直前行(前月)のフォーマットをコピー(罫線継承)
         prev_row_idx = len(all_v)  # ヘッダ込みの最終行(=直前月行)
-        ws.append_row([target_label] + [""] * 20, value_input_option="USER_ENTERED")
+        ws.append_row([target_label] + [""] * 24, value_input_option="USER_ENTERED")
         row_idx = len(ws.get_all_values())
         sheet_id = ws.id
         sh.batch_update({"requests": [{
             "copyPaste": {
                 "source": {"sheetId": sheet_id, "startRowIndex": prev_row_idx - 1, "endRowIndex": prev_row_idx,
-                           "startColumnIndex": 0, "endColumnIndex": 21},
+                           "startColumnIndex": 0, "endColumnIndex": 25},
                 "destination": {"sheetId": sheet_id, "startRowIndex": row_idx - 1, "endRowIndex": row_idx,
-                                "startColumnIndex": 0, "endColumnIndex": 21},
+                                "startColumnIndex": 0, "endColumnIndex": 25},
                 "pasteType": "PASTE_FORMAT"
             }
         }]})
         print(f"  ➕ 解約率 {target_label}行 新規追加(罫線継承)")
 
-    # 入会:B-F / 解約:G-K / 会員:L-P / 解約率:Q-U
-    # 順序: 川越/大宮/神戸元町/高崎/西宮北口
-    order = [("S001", 0), ("S002", 1), ("S004", 2), ("S003", 3), ("S005", 4)]
+    # 入会:B-G / 解約:H-M / 会員:N-S / 解約率:T-Y  (2026-08 所沢追加で1ブロック6列)
+    # 順序: 川越/大宮/神戸元町/高崎/西宮北口/所沢
+    order = [("S001", 0), ("S002", 1), ("S004", 2), ("S003", 3), ("S005", 4), ("S006", 5)]
     for sid, idx in order:
         if sid not in summary: continue
         d = summary[sid]
         ws.update_cell(row_idx, 2 + idx, d["contracts"])
-        ws.update_cell(row_idx, 7 + idx, d["cancels"])
-        ws.update_cell(row_idx, 12 + idx, d["members"])
+        ws.update_cell(row_idx, 8 + idx, d["cancels"])
+        ws.update_cell(row_idx, 14 + idx, d["members"])
         rate = (d["cancels"] / d["members"] * 100) if d["members"] else 0
-        ws.update_cell(row_idx, 17 + idx, f"{rate:.1f}%")
+        ws.update_cell(row_idx, 20 + idx, f"{rate:.1f}%")
     print(f"  ✅ 解約率 {target_label}行 更新完了(集計表ベース)")
 
 
@@ -284,17 +287,23 @@ def update_reviews(sh):
 
     # シートに反映
     # Google: 行2-6 / HPB: 行7-11 / 合計(Google+HPB): 行12-16
-    google_rows = {"S001": 2, "S002": 3, "S003": 4, "S004": 5, "S005": 6}
-    hpb_rows = {"S001": 7, "S002": 8, "S003": 9, "S004": 10, "S005": 11}
+    # 所沢(S006)は後から追加されたため Google=17 / HPB=18 / Google+HPB=19。
+    # 19行目は =C17+C18 形式の数式なので、ここから合計を書き込むと数式が壊れる。
+    # そのため total_rows には S006 を入れない(行17/18を更新すれば19行目は自動計算)。
+    # (reviews_fetcher.py / alert_sender.py の行マップと揃えること)
+    google_rows = {"S001": 2, "S002": 3, "S003": 4, "S004": 5, "S005": 6, "S006": 17}
+    hpb_rows = {"S001": 7, "S002": 8, "S003": 9, "S004": 10, "S005": 11, "S006": 18}
     total_rows = {"S001": 12, "S002": 13, "S003": 14, "S004": 15, "S005": 16}
-    for sid in ["S001", "S002", "S003", "S004", "S005"]:
+    for sid in ["S001", "S002", "S003", "S004", "S005", "S006"]:
+        if sid not in counts:
+            continue
         g = counts[sid]["google"]
         h = counts[sid]["hpb"]
         if g is not None:
             ws.update_cell(google_rows[sid], col_idx, g)
         if h is not None:
             ws.update_cell(hpb_rows[sid], col_idx, h)
-        if g is not None or h is not None:
+        if sid in total_rows and (g is not None or h is not None):
             ws.update_cell(total_rows[sid], col_idx, (g or 0) + (h or 0))
     print(f"  ✅ 口コミ '{target_label}'列 更新完了(Google+HPB+合計)")
 

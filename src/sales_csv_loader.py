@@ -38,6 +38,7 @@ STORE_MAP = {
     "高崎":     "S003",
     "神戸元町": "S004",
     "西宮北口": "S005",
+    "所沢":     "S006",
 }
 
 STORE_NAMES = list(STORE_MAP.keys())
@@ -119,7 +120,7 @@ def update_jisseki_sheet(sh, updates: dict, year_month: str, period: str, summar
 
         store_name_jp = {
             "S001": "川越店", "S002": "大宮店", "S003": "高崎店",
-            "S004": "神戸元町店", "S005": "西宮北口店",
+            "S004": "神戸元町店", "S005": "西宮北口店", "S006": "所沢店",
         }[store_id]
 
         # 集計表データ(あれば使う)
