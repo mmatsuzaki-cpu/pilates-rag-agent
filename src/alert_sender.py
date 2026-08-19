@@ -198,19 +198,53 @@ def resolve_report_channel() -> str:
 #    貯まらない不具合)、OUTPUT スプシの専用タブに保存(GitHub/Mac 両対応)。
 _SNAP_KEYS = ("members", "newcomers", "contracts", "cancels", "referrals", "google", "hpb")
 _SNAP_SHEET = "_前日比スナップショット"
+# 保存先スプシ (2026-08-20 変更)
+# 旧 SPREADSHEET_ID(1W3OUR8s...) が 404 になり、保存も読込も失敗して
+# 前日比が表示されなくなっていたため、実績ダッシュボードのスプシに移動。
+_SNAP_SSID = DASHBOARD_SSID
+# スプシ側が落ちても前日比が途切れないようローカルにも二重保存する
+_SNAP_LOCAL = PROJECT_ROOT / "data" / "daily_snapshots.json"
+_SNAP_LOCAL_KEEP = 40   # ローカルに残す日数
 
 
 def _snapshot_ws(gc=None):
     """スナップショット保存タブ(無ければ作成)"""
     if gc is None:
         gc = get_gspread_client()
-    sh = gc.open_by_key(SPREADSHEET_ID)
+    sh = gc.open_by_key(_SNAP_SSID)
     try:
         return sh.worksheet(_SNAP_SHEET)
     except Exception:
         ws = sh.add_worksheet(title=_SNAP_SHEET, rows=500, cols=2)
         ws.update("A1:B1", [["date", "json"]])
         return ws
+
+
+def _local_load_all() -> dict:
+    """ローカルスナップショット {"YYYY-MM-DD": snap} を読む(無い/壊れていれば空)"""
+    try:
+        if _SNAP_LOCAL.exists():
+            data = json.loads(_SNAP_LOCAL.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+    except Exception as e:
+        print(f"  ⚠️ ローカルスナップショット読込失敗(無視): {e}")
+    return {}
+
+
+def _local_save(snap: dict, date_str: str) -> bool:
+    """ローカルにも保存(直近 _SNAP_LOCAL_KEEP 日ぶんだけ保持)"""
+    try:
+        data = _local_load_all()
+        data[date_str] = snap
+        if len(data) > _SNAP_LOCAL_KEEP:
+            data = {k: data[k] for k in sorted(data)[-_SNAP_LOCAL_KEEP:]}
+        _SNAP_LOCAL.parent.mkdir(parents=True, exist_ok=True)
+        _SNAP_LOCAL.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        return True
+    except Exception as e:
+        print(f"  ⚠️ ローカルスナップショット保存失敗(無視): {e}")
+        return False
 
 
 def _build_snapshot(summary: dict, date_str: str) -> dict:
@@ -234,9 +268,16 @@ def _build_snapshot(summary: dict, date_str: str) -> dict:
 
 
 def _save_snapshot(summary: dict, date_str: str, gc=None):
-    """当日の集計をスプシのスナップショットタブに保存(同日はupsert)"""
+    """当日の集計を保存(同日はupsert)。スプシ + ローカルの二重保存。
+
+    どちらか一方が落ちても翌日の前日比が出せるようにしている。
+    """
     snap = _build_snapshot(summary, date_str)
     blob = json.dumps(snap, ensure_ascii=False)
+    ok_local = _local_save(snap, date_str)
+    if ok_local:
+        print(f"  💾 スナップショット保存(ローカル): {date_str}")
+    ok_sheet = False
     try:
         ws = _snapshot_ws(gc)
         rows = ws.get_all_values()
@@ -249,27 +290,53 @@ def _save_snapshot(summary: dict, date_str: str, gc=None):
             ws.update(f"A{target}:B{target}", [[date_str, blob]])
         else:
             ws.append_row([date_str, blob], value_input_option="RAW")
+        ok_sheet = True
         print(f"  💾 スナップショット保存(スプシ): {date_str}")
     except Exception as e:
-        print(f"  ⚠️ スナップショット保存失敗(無視): {e}")
+        print(f"  ⚠️ スナップショット保存失敗(スプシ・無視): {e}")
+    if not ok_sheet and not ok_local:
+        print("  ❌ スナップショットを保存できませんでした → 翌日の前日比が出ません")
 
 
 def _load_prev_snapshot(ref: datetime, gc=None):
-    """ref日より前で最新のスナップショットを返す (無ければNone)"""
+    """ref日より前で最新のスナップショットを返す (無ければNone)
+
+    スプシとローカルの両方から候補を集め、日付が新しい方を採用する。
+    """
     ref_str = ref.strftime("%Y-%m-%d")
+    best_date, best_snap, src = None, None, ""
+
+    # 1) スプシ
     try:
         ws = _snapshot_ws(gc)
         rows = ws.get_all_values()
-        prev = None
         for r in rows[1:]:
-            if r and r[0] and r[0] < ref_str:   # YYYY-MM-DD は辞書順=日付順
-                if prev is None or r[0] > prev[0]:
-                    prev = r
-        if prev and len(prev) > 1 and prev[1]:
-            return json.loads(prev[1])
+            if not (r and r[0] and len(r) > 1 and r[1]):
+                continue
+            if r[0] >= ref_str:                 # YYYY-MM-DD は辞書順=日付順
+                continue
+            if best_date is not None and r[0] <= best_date:
+                continue
+            try:
+                best_snap = json.loads(r[1])
+                best_date, src = r[0], "スプシ"
+            except Exception:
+                continue                        # 壊れた行はスキップ
     except Exception as e:
-        print(f"  ⚠️ 前日スナップショット読込失敗(無視): {e}")
-    return None
+        print(f"  ⚠️ 前日スナップショット読込失敗(スプシ・無視): {e}")
+
+    # 2) ローカル(スプシが落ちている日でも前日比を切らさない)
+    try:
+        for d, snap in _local_load_all().items():
+            if d < ref_str and isinstance(snap, dict) and snap.get("stores"):
+                if best_date is None or d > best_date:
+                    best_date, best_snap, src = d, snap, "ローカル"
+    except Exception as e:
+        print(f"  ⚠️ 前日スナップショット読込失敗(ローカル・無視): {e}")
+
+    if best_snap:
+        print(f"  📂 前日スナップショット取得元: {src} ({best_date})")
+    return best_snap
 
 
 def _agg_to_dashboard_data(summary: dict, title: str, subtitle: str, as_of: str,
