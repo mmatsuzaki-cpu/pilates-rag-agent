@@ -1,0 +1,54 @@
+name: 📈 ピラティス 契約率推移レポート (毎月1日)
+
+# 毎月1日に「その年の1月〜前月(確定)」の契約率推移を店舗別6枚の画像にして
+# #ピラティス_実績進捗 に配信する(確定版)。
+# 冪等性: 同じ「{年}年 契約率推移 / 1〜{月}月」の投稿が直近6日以内にあれば skip。
+on:
+  schedule:
+    - cron: '10 1 1 * *'   # 毎月1日 10:10 JST (UTC 01:10)
+  workflow_dispatch:
+
+concurrency:
+  group: pilates-trend
+  cancel-in-progress: false
+
+jobs:
+  send-trend:
+    name: 契約率推移レポート
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Playwright Chromium インストール (推移レポートPNG生成用)
+        run: python -m playwright install --with-deps chromium
+
+      - name: credentials / .env 復元
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_REPORT_CHANNEL_ID: ${{ secrets.SLACK_REPORT_CHANNEL_ID }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          OUTPUT_SPREADSHEET_ID: ${{ secrets.OUTPUT_SPREADSHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          mkdir -p config data output/logs
+          printf '%s' "${SLACK_BOT_TOKEN}" > config/slack_bot_token.txt
+          echo "${GOOGLE_SERVICE_ACCOUNT_JSON}" | base64 -d > config/credentials.json
+          cat > config/.env <<EOF
+          SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+          OUTPUT_SPREADSHEET_ID=${OUTPUT_SPREADSHEET_ID}
+          SLACK_BOT_TOKEN_FILE=config/slack_bot_token.txt
+          SLACK_REPORT_CHANNEL_ID=${SLACK_REPORT_CHANNEL_ID}
+          EOF
+
+      - name: 契約率推移レポート → #ピラティス_実績進捗
+        run: python -u src/trend_report.py
