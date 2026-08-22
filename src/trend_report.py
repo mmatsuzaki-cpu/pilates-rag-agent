@@ -22,7 +22,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import get_gspread_client, slack_bot_token, slack_post_message
+from common import get_gspread_client, slack_bot_token
 from store_summary_reader import STORE_SUMMARIES, safe_int
 from alert_sender import resolve_report_channel, _now_jst
 
@@ -56,7 +56,7 @@ def gather(gc, year: int) -> dict:
         if msheet:
             ranges = [f"'{msheet[m]}'!A2:CK4" for m in sorted(msheet)]
             try:
-                vr = gc.open_by_key(store["ssid"]).values_batch_get(ranges)["valueRanges"]
+                vr = sh.values_batch_get(ranges)["valueRanges"]
             except Exception as e:
                 print(f"  ⚠️ {rec['name']} 取得失敗: {e}")
                 out[store["id"]] = rec
@@ -142,7 +142,8 @@ def all_store_month(data, m):
 def line_chart(data, sid, months, content_w):
     """1店舗分の折れ線: その店の月次契約率(太線・値ラベル付き) + 全店平均(参考・細い点線)"""
     W, H = content_w, 420
-    PADL, PADR, PADT, PADB = 70, 190, 30, 50
+    # PADR は凡例＋余白。最終月の値ラベル(%)が凡例に重ならないよう十分に取る
+    PADL, PADR, PADT, PADB = 70, 230, 30, 50
     plotW, plotH = W - PADL - PADR, H - PADT - PADB
     n = len(months)
     col = LINE_COLORS[sid]
@@ -183,13 +184,14 @@ def line_chart(data, sid, months, content_w):
         p.append(f'<circle cx="{x(m):.1f}" cy="{y(v):.1f}" r="7" fill="#fff" stroke="{col}" stroke-width="3.5"/>')
         p.append(f'<text x="{x(m):.1f}" y="{y(v)-17:.1f}" class="ptval" fill="{col}" text-anchor="middle">{round(v)}%</text>')
 
-    # 凡例
+    # 凡例 (プロット右端から 66px 離して値ラベルとの重なりを回避)
+    lx = PADL + plotW + 66
     ly = PADT + 14
-    p.append(f'<rect x="{PADL+plotW+26}" y="{ly-13}" width="20" height="6" rx="3" fill="{col}"/>')
-    p.append(f'<text x="{PADL+plotW+54}" y="{ly-4}" class="lg" font-weight="900">{st.get("name","")}</text>')
+    p.append(f'<rect x="{lx}" y="{ly-13}" width="20" height="6" rx="3" fill="{col}"/>')
+    p.append(f'<text x="{lx+28}" y="{ly-4}" class="lg" font-weight="900">{st.get("name","")}</text>')
     ly += 32
-    p.append(f'<line x1="{PADL+plotW+26}" y1="{ly-10}" x2="{PADL+plotW+46}" y2="{ly-10}" stroke="#B7AC9C" stroke-width="3" stroke-dasharray="6 4"/>')
-    p.append(f'<text x="{PADL+plotW+54}" y="{ly-4}" class="lg">全店平均</text>')
+    p.append(f'<line x1="{lx}" y1="{ly-10}" x2="{lx+20}" y2="{ly-10}" stroke="#B7AC9C" stroke-width="3" stroke-dasharray="6 4"/>')
+    p.append(f'<text x="{lx+28}" y="{ly-4}" class="lg">全店平均</text>')
     p.append('</svg>')
     return "".join(p)
 
@@ -295,8 +297,11 @@ def render_store_pngs(data, year, months, stamp: str):
         pg = b.new_page(viewport={"width": body_w, "height": 1000}, device_scale_factor=2)
         for sid in ORDER:
             st = data.get(sid, {})
-            if not st.get("total") and not st.get("staff"):
-                print(f"  · {NAME6.get(sid)}: 実績なし → スキップ")
+            # 対象期間(months)内に実績がある店のみ生成。
+            # 期間外にしかデータが無い店(例: 8月開店の所沢を1〜7月レポートで扱う場合)は
+            # 全セル「—」の空レポートになるためスキップする。
+            if avg_md(st.get("total", {}), months)["den"] == 0:
+                print(f"  · {NAME6.get(sid)}: 対象期間に実績なし → スキップ")
                 continue
             out = Path(f"/tmp/pilates_trend_{year}_{sid}_{stamp}.png")
             pg.set_content(build_html(data, sid, year, months), wait_until="networkidle")
@@ -373,15 +378,22 @@ def main():
 
     gc = get_gspread_client()
     now = _now_jst()
-    year = now.year
-    print(f"📈 {year}年 契約率推移レポート生成中...")
+    # ── 対象年と「確定月」の決定 ────────────────────────────
+    # 確定版レポートなので当月(進行中)は含めない = 前月までが上限。
+    # 1月に実行した場合は前年12月まで(=前年のレポート)を出す。
+    if now.month == 1:
+        year, cap = now.year - 1, 12
+    else:
+        year, cap = now.year, now.month - 1
+    print(f"📈 {year}年 契約率推移レポート生成中(確定月上限: {cap}月)...")
     data = gather(gc, year)
-    last = last_month_with_data(data)
-    if last == 0:   # 年明け直後で当年データ無し → 前年の確定版
+    last = min(last_month_with_data(data), cap)
+    if last == 0 and now.month != 1:
+        # 当年にまだ確定データが無い(年始など) → 前年の確定版にフォールバック
         year -= 1
-        print(f"  当年データなし → 前年 {year}年 に切替")
+        print(f"  当年の確定データなし → 前年 {year}年 に切替")
         data = gather(gc, year)
-        last = last_month_with_data(data)
+        last = min(last_month_with_data(data), 12)
     if through:
         last = min(last, through)
     if last == 0:
