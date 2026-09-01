@@ -67,8 +67,30 @@ def get_reviews_from_kuchikomi(gc):
     except ValueError:
         latest_col = len(header) - 1
 
-    google_rows = {"S001": 1, "S002": 2, "S003": 3, "S004": 4, "S005": 5, "S006": 16}  # 0-indexed
-    hpb_rows    = {"S001": 6, "S002": 7, "S003": 8, "S004": 9, "S005": 10, "S006": 17}
+    # 行はハードコードせず、A列のグループ見出し(Google/HPB/Google+HPB)と
+    # B列の店舗名から動的に特定する (いずれも 0-indexed)。
+    # (2026-09-01: 所沢を各ブロックの下へ移した際、旧ハードコードがズレて
+    #  他店舗の口コミ件数を読んでいた事故があったため)
+    store_name = {"S001": "川越", "S002": "大宮", "S003": "高崎",
+                  "S004": "神戸元町", "S005": "西宮北口", "S006": "所沢"}
+    google_rows, hpb_rows = {}, {}
+    group = None
+    for i, row in enumerate(v):
+        if i == 0:
+            continue
+        a = str(row[0]).strip() if len(row) > 0 else ""
+        b = str(row[1]).strip() if len(row) > 1 else ""
+        if a in ("Google", "HPB", "Google+HPB"):
+            group = a
+        if not b or group is None:
+            continue
+        st = b.split("(")[0].strip()
+        for sid, nm in store_name.items():
+            if st == nm:
+                if group == "Google":
+                    google_rows[sid] = i
+                elif group == "HPB":
+                    hpb_rows[sid] = i
 
     def latest_value(row):
         """当月列(latest_col)から左へ走査し、最初の非空セルを返す。

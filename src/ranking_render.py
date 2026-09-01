@@ -28,15 +28,19 @@ def _rows(items: list, kind: str) -> str:
     if not items:
         return '<div class="empty">データがありません</div>'
     out = []
+    rank, prev = 0, None
     for i, m in enumerate(items, start=1):
+        # 同率は同じ順位にする(1,2,3,4,5,5 …)
+        if m["value"] != prev:
+            rank, prev = i, m["value"]
         if kind == "lesson":
             val = f'{m["value"]}<span class="unit">本</span>'
         else:
             val = (f'{m["value"]}<span class="unit">%</span>'
                    f'<span class="sub">({m["num"]}/{m["den"]})</span>')
-        top = " top" if i <= 3 else ""
+        top = " top" if rank <= 3 else ""
         out.append(
-            f'<div class="row{top}">{_badge(i)}'
+            f'<div class="row{top}">{_badge(rank)}'
             f'<span class="nm">{m["name"]}</span>'
             f'<span class="st">{m["store"]}</span>'
             f'<span class="val">{val}</span></div>')
@@ -44,8 +48,7 @@ def _rows(items: list, kind: str) -> str:
 
 
 def build_html(d: dict) -> str:
-    n_lesson = len(d.get("lesson") or [])
-    n_contract = len(d.get("contract") or [])
+    top_n = d.get("top_n") or len(d.get("lesson") or [])
     return f"""<html><head><meta charset="utf-8"><style>
 :root {{ --bg:#FBF8F1; --ink:#2E2A24; --bronze:#9C7A5B; --gold:#C9962F;
   --gold-d:#A87B45; --line:#ECE3D5; --green:#2F7D4F; }}
@@ -63,7 +66,8 @@ body {{ width:{BODY_W}px; background:var(--bg); color:var(--ink);
   color:#fff; font-weight:800; font-size:17px; padding:8px 18px; border-radius:999px; }}
 .grid {{ display:grid; grid-template-columns:1fr 1fr; gap:26px; }}
 .card {{ background:#fff; border:1px solid var(--line); border-radius:20px;
-  padding:24px 26px 18px; box-shadow:0 2px 10px rgba(0,0,0,.04); }}
+  padding:24px 26px 18px; box-shadow:0 2px 10px rgba(0,0,0,.04);
+  display:flex; flex-direction:column; }}
 .card-t {{ font-family:"Noto Serif CJK JP",serif; font-size:25px; font-weight:900;
   color:var(--gold-d); display:flex; align-items:center; gap:10px;
   border-bottom:1.5px dashed var(--line); padding-bottom:12px; margin-bottom:6px; }}
@@ -85,7 +89,7 @@ body {{ width:{BODY_W}px; background:var(--bg); color:var(--ink);
 .unit {{ font-size:16px; margin-left:2px; }}
 .sub {{ font-size:15px; color:#8A8074; font-weight:700; margin-left:7px; }}
 .empty {{ padding:26px 4px; color:#9A9086; font-size:16px; text-align:center; }}
-.note {{ margin-top:12px; font-size:13px; color:#9A9086; text-align:right; }}
+.note {{ margin-top:auto; padding-top:12px; font-size:13px; color:#9A9086; text-align:right; }}
 .foot {{ margin-top:22px; font-size:13px; color:#9A9086; text-align:right; }}
 </style></head><body>
 <div class="head"><span class="spark">✳</span>
@@ -93,10 +97,10 @@ body {{ width:{BODY_W}px; background:var(--bg); color:var(--ink);
   <span class="sub-t">{d['subtitle']}</span>
   <span class="asof">{d['as_of']}</span></div>
 <div class="grid">
-  <div class="card"><div class="card-t"><span>🏋️</span>レッスン数 TOP{n_lesson or ''}</div>
+  <div class="card"><div class="card-t"><span>🏋️</span>レッスン数 TOP{top_n}</div>
     {_rows(d.get('lesson'), 'lesson')}
     <div class="note">{d.get('lesson_note','')}</div></div>
-  <div class="card"><div class="card-t"><span>🎯</span>契約率 TOP{n_contract or ''}</div>
+  <div class="card"><div class="card-t"><span>🎯</span>契約率 TOP{top_n}</div>
     {_rows(d.get('contract'), 'contract')}
     <div class="note">{d.get('contract_note','')}</div></div>
 </div>

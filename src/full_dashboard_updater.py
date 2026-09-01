@@ -212,11 +212,22 @@ def fetch_google_count(place_id: str) -> int:
 
 
 def fetch_hpb_count(url: str) -> int:
+    """HPBサロンページの口コミ件数。取得できなければ None を返す。
+    口コミが1件も無いサロン(新店など)はカウント表示自体が出ないため、
+    「まだ口コミがありません」を検出して 0 を返す(None のままだと
+    シートが未更新のまま古い値が残ってしまう)。
+    """
+    if not url:
+        return None
     try:
         r = requests.get(url, headers={"User-Agent": UA}, timeout=15)
         m = re.search(r'slnHeaderKuchikomiCount[^>]*>[^（(]*[（(]\s*(\d[\d,]*)\s*件', r.text)
         if m:
             return int(m.group(1).replace(",", ""))
+        # 口コミ0件のサロンは件数要素(slnHeaderKuchikomiCount)自体が出力されず、
+        # 代わりに「(直近1年以内の)口コミ投稿がないため…」の注記が入る
+        if "口コミ投稿がないため" in r.text or "まだ口コミがありません" in r.text:
+            return 0
     except: pass
     return None
 
@@ -227,6 +238,7 @@ HPB_URLS = {
     "S003": "https://beauty.hotpepper.jp/kr/slnH000774690/",
     "S004": "https://beauty.hotpepper.jp/kr/slnH000740308/",
     "S005": "https://beauty.hotpepper.jp/kr/slnH000777989/",
+    "S006": "https://beauty.hotpepper.jp/kr/slnH000820108/",   # 所沢(2026-08オープン)
 }
 
 
@@ -286,16 +298,44 @@ def update_reviews(sh):
         print(f"  📊 {info['name']:10s}: G={counts[sid]['google']} H={counts[sid]['hpb']}")
 
     # シートに反映
-    # Google: 行2-6 / HPB: 行7-11 / 合計(Google+HPB): 行12-16
-    # 所沢(S006)は後から追加されたため Google=17 / HPB=18 / Google+HPB=19。
-    # 19行目は =C17+C18 形式の数式なので、ここから合計を書き込むと数式が壊れる。
-    # そのため total_rows には S006 を入れない(行17/18を更新すれば19行目は自動計算)。
-    # (reviews_fetcher.py / alert_sender.py の行マップと揃えること)
-    google_rows = {"S001": 2, "S002": 3, "S003": 4, "S004": 5, "S005": 6, "S006": 17}
-    hpb_rows = {"S001": 7, "S002": 8, "S003": 9, "S004": 10, "S005": 11, "S006": 18}
-    total_rows = {"S001": 12, "S002": 13, "S003": 14, "S004": 15, "S005": 16}
+    # 行番号はハードコードせず、A列のグループ見出し(Google / HPB / Google+HPB)と
+    # B列の店舗名から動的に特定する。
+    # (2026-09-01: 所沢を各ブロックの下に移した際、旧ハードコード
+    #  「Google=17/HPB=18」等がズレて他店舗の行を上書きする事故が発生したため)
+    store_name = {"S001": "川越", "S002": "大宮", "S003": "高崎",
+                  "S004": "神戸元町", "S005": "西宮北口", "S006": "所沢"}
+    google_rows, hpb_rows, total_rows = {}, {}, {}
+    group = None
+    for i, row in enumerate(all_v[1:], start=2):
+        a = str(row[0]).strip() if len(row) > 0 else ""
+        b = str(row[1]).strip() if len(row) > 1 else ""
+        if a in ("Google", "HPB", "Google+HPB"):
+            group = a
+        if not b or group is None:
+            continue
+        st = b.split("(")[0].strip()
+        for sid, nm in store_name.items():
+            if st == nm:
+                if group == "Google":
+                    google_rows[sid] = i
+                elif group == "HPB":
+                    hpb_rows[sid] = i
+                else:
+                    total_rows[sid] = i
+    missing = [s for s in store_name if s not in google_rows or s not in hpb_rows]
+    if missing:
+        print(f"  ⚠️ 口コミシートで行を特定できない店舗: {missing} → その店舗はスキップ")
+
+    def _col_letter(n):
+        s = ""
+        while n:
+            n, r = divmod(n - 1, 26)
+            s = chr(65 + r) + s
+        return s
+
+    cl = _col_letter(col_idx)
     for sid in ["S001", "S002", "S003", "S004", "S005", "S006"]:
-        if sid not in counts:
+        if sid not in counts or sid not in google_rows or sid not in hpb_rows:
             continue
         g = counts[sid]["google"]
         h = counts[sid]["hpb"]
@@ -303,8 +343,10 @@ def update_reviews(sh):
             ws.update_cell(google_rows[sid], col_idx, g)
         if h is not None:
             ws.update_cell(hpb_rows[sid], col_idx, h)
+        # 合計は数式で入れる(直値だと Google/HPB を直した時に追従しない)
         if sid in total_rows and (g is not None or h is not None):
-            ws.update_cell(total_rows[sid], col_idx, (g or 0) + (h or 0))
+            ws.update_cell(total_rows[sid], col_idx,
+                           f"={cl}{google_rows[sid]}+{cl}{hpb_rows[sid]}")
     print(f"  ✅ 口コミ '{target_label}'列 更新完了(Google+HPB+合計)")
 
 
