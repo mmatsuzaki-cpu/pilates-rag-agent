@@ -135,6 +135,16 @@ def extract_contract(text):
                 if "なし" in v or "無" in v or "ない" in v:
                     return "なし"
                 return "あり"
+    # 新規対応報告アプリの形式は「結果: 入会 / 未入会 / トライアル」（2026-09-06 追加）
+    for line in text.split("\n"):
+        if line.startswith("結果"):
+            m = re.search(r"[:：][ \t]*(.+)$", line)
+            if m:
+                v = _clean(m.group(1))
+                if "未入会" in v or "トライアル" in v:
+                    return "なし"
+                if "入会" in v:
+                    return "あり"
     return "不明"
 
 

@@ -64,7 +64,37 @@ PRIORITY_KEYWORDS = [
 ]
 
 
+# 新規対応報告アプリ(pilates-shinki-app)からの投稿の目印。
+# アプリはBot名義で投稿するため、下の「Bot投稿は無視」に引っかかってFBが飛んでいなかった
+# （2026-09-06 松崎さん指摘。9件の報告が未FBのままだった）。
+APP_MARKER = "*新規対応の報告*"
+
+_EMOJI_CODE = re.compile(r":[a-z0-9_+\-]+:")
+_EMOJI_CHAR = re.compile(r"[\U0001F300-\U0001FAFF\u2600-\u27BF\uFE0F]")
+
+
+def is_app_report(text):
+    return APP_MARKER in (text or "")
+
+
+def normalize_app_text(text):
+    """アプリの報告(Slack装飾つき)を素のラベル形式に直す。
+      「*💭 悩み* 猫背、腰痛」→「悩み: 猫背、腰痛」
+    既存の抽出関数(悩み/仕事/契約など)をそのまま使えるようにするため。"""
+    out = []
+    for line in (text or "").split("\n"):
+        line = _EMOJI_CODE.sub("", line)
+        line = _EMOJI_CHAR.sub("", line)
+        m = re.match(r"\s*\*([^*]+)\*\s*(.*)$", line)
+        if m:
+            label, value = m.group(1).strip(), m.group(2).strip()
+            line = f"{label}: {value}" if value else f"{label}:"
+        out.append(line.replace("*", "").strip())
+    return "\n".join(out)
+
+
 def is_reflection(text):
+    if is_app_report(text): return True
     if len(text) < 100: return False
     return "年齢" in text and ("悩み" in text or "契約" in text)
 
@@ -359,7 +389,10 @@ def main():
     for m in messages:
         text = m.get("text", "")
         ts = m.get("ts", "")
-        if not m.get("user") or m.get("bot_id"): continue
+        # アプリからの報告はBot名義なので、目印があるものは通す
+        # （qa_bot自身のFBはスレッド返信なので history には出てこない＝ループしない）
+        if not is_app_report(text) and (not m.get("user") or m.get("bot_id")):
+            continue
         if ts in replied: continue
         if mention_pat in text: questions.append(m)
         elif is_reflection(text): reflections.append(m)
@@ -396,8 +429,19 @@ def main():
         ts = r.get("ts", "")
         user_id = r.get("user", "")
 
-        # スタッフ名抽出: テキスト先頭から名前候補を探す → 取れなければSlack名
-        staff_name = extract_staff_name(text)
+        # アプリの報告は装飾を外してから抽出にかける
+        from_app = is_app_report(text)
+        if from_app:
+            text = normalize_app_text(text)
+
+        # スタッフ名抽出
+        #   アプリ: 投稿者名「所沢店 MIZUKI」の末尾がスタッフ名
+        #   手書き: テキスト先頭から名前候補を探す → 取れなければSlack名
+        staff_name = ""
+        if from_app:
+            staff_name = (r.get("username") or "").split()[-1] if r.get("username") else ""
+        if not staff_name:
+            staff_name = extract_staff_name(text)
         if not staff_name:
             staff_name = fetch_user_name(user_id, user_cache) if user_id else "スタッフ"
         if not staff_name:
