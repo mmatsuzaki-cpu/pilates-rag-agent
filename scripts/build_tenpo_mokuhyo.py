@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """店舗目標タブを「月ごとブロック」レイアウトに作り替える"""
+import re
 import sys, argparse
 from datetime import date
 from pathlib import Path
@@ -71,6 +72,20 @@ FURI_NOTE = (
     "の3つを書いてください。"
 )
 
+# 保護をかけても編集できる人（サービスアカウント＋松崎さん）。オーナーは常に編集可
+PROTECT_EDITORS = [
+    "harinature-jisseki-bot@invoice-agent-494409.iam.gserviceaccount.com",
+    "m.matsuzaki@koshikiad.com",
+]
+
+# 数式で自動反映される (項目ラベル, 店舗名) の組。手入力の退避対象から外し、保護もかける
+# パーセント表示の項目（全角％まじりの文字列を数値へ直す対象）
+PCT_LABELS = {"契約率", "解約率"}
+
+AUTO_KEYS = {(norm_label(l), name)
+             for l, k, _, _ in ITEMS if k
+             for name, _, ref in STORES if ref}
+
 C_HEAD_BG   = {"red": 0.184, "green": 0.235, "blue": 0.286}   # 濃紺グレー
 C_HEAD_FG   = {"red": 1, "green": 1, "blue": 1}
 C_MONTH_BG  = {"red": 0.949, "green": 0.925, "blue": 0.867}   # ベージュ
@@ -135,7 +150,13 @@ def snapshot_manual(ws):
             for off, kind in ((0, "目標"), (1, "結果")):
                 if g + off >= ncol:
                     continue
+                if kind == "結果" and (lab, name) in AUTO_KEYS:
+                    continue   # 自動反映セル。数式が消されていても復元を優先する
                 c = v[i][g + off]
+                if lab in PCT_LABELS and isinstance(c, str):
+                    m = re.fullmatch(r"\s*([0-9]+(?:\.[0-9]+)?)\s*[%％]\s*", c)
+                    if m:      # 「3％」(全角)は文字列扱いになるので割合の数値に直す
+                        c = float(m.group(1)) / 100
                 if str(c).strip() and not str(c).startswith("="):
                     out[(cur, lab, name, kind)] = c
     return out, free_labels
@@ -160,7 +181,7 @@ def f_kaiyaku(col, mr):
 
 def f_judge(gc_, rc_, row, lower):
     op = "<=" if lower else ">="
-    return ('=IF(OR({g}{r}="",{v}{r}=""),"",'
+    return ('=IF(OR(NOT(ISNUMBER({g}{r})),NOT(ISNUMBER({v}{r}))),"",'
             'IF({v}{r}{o}{g}{r},"達成","未達"))').format(g=gc_, v=rc_, r=row, o=op)
 
 
@@ -208,6 +229,13 @@ def build():
             cf_n = len(s_.get("conditionalFormats", []))
     for i in range(cf_n - 1, -1, -1):
         pre.append({"deleteConditionalFormatRule": {"sheetId": sid, "index": i}})
+    pr_n = 0
+    for s_ in meta.get("sheets", []):
+        if s_["properties"]["sheetId"] == sid:
+            for pr_ in s_.get("protectedRanges", []):
+                pre.append({"deleteProtectedRange":
+                            {"protectedRangeId": pr_["protectedRangeId"]}})
+                pr_n += 1
     pre.append({"unmergeCells": {"range": {"sheetId": sid}}})
     pre.append({"updateCells": {"range": {"sheetId": sid},
                                 "fields": "userEnteredValue,userEnteredFormat,note"}})
@@ -223,7 +251,7 @@ def build():
                                                           "frozenColumnCount": 1}},
         "fields": "gridProperties.frozenRowCount,gridProperties.frozenColumnCount"}})
     sh.batch_update({"requests": pre})
-    print(f"  ✅ 初期化（既存の条件付き書式 {cf_n}件を削除・マージ解除・全消去・列を{NCOL}列に）")
+    print(f"  ✅ 初期化（既存の条件付き書式 {cf_n}件・保護 {pr_n}件を削除・マージ解除・全消去・列を{NCOL}列に）")
 
     reqs = []
 
@@ -465,8 +493,48 @@ def build():
                 "format": {"backgroundColor": bg,
                            "textFormat": {"bold": True, "foregroundColor": fg}}}}}})
 
+    # 手入力セルは数字だけ受け付ける（「3％」「500万」などの文字列を弾く）
+    dv_rule = {"condition": {"type": "NUMBER_GREATER_THAN_EQ",
+                             "values": [{"userEnteredValue": "0"}]},
+               "inputMessage": "数字だけを入力してください（％や「万」の文字は不要）",
+               "strict": True}
+    for bi, _ in enumerate(MONTHS):
+        mr0 = HEAD + bi * BLOCK
+        for name, gcol, ref in STORES:
+            dv = [rng(mr0 + 2, mr0 + 10, gcol, gcol + 1)]          # 目標列(その他行は除く)
+            if ref:
+                dv.append(rng(mr0 + 3, mr0 + 4, gcol + 1, gcol + 2))
+                dv.append(rng(mr0 + 8, mr0 + 10, gcol + 1, gcol + 2))
+            else:
+                dv.append(rng(mr0 + 2, mr0 + 10, gcol + 1, gcol + 2))
+            for r_ in dv:
+                reqs.append({"setDataValidation": {"range": r_, "rule": dv_rule}})
+
+    # 保護: シート全体をロックし、手で入力してよいセルだけ解放する
+    unprot = []
+    for bi, _ in enumerate(MONTHS):
+        mr0 = HEAD + bi * BLOCK
+        for name, gcol, ref in STORES:
+            # 目標列（KPI9項目＋KDI見出し以下の行動・振り返りのマージ左上）
+            unprot.append(rng(mr0 + 2, mr0 + 14, gcol, gcol + 1))
+            if ref:
+                unprot.append(rng(mr0 + 3, mr0 + 4, gcol + 1, gcol + 2))    # 消化売上
+                unprot.append(rng(mr0 + 8, mr0 + 11, gcol + 1, gcol + 2))   # 口コミ〜その他
+            else:
+                unprot.append(rng(mr0 + 2, mr0 + 11, gcol + 1, gcol + 2))   # 浦和は結果も手入力
+        unprot.append(rng(mr0 + 10, mr0 + 11, 0, 1))   # 「その他」行の項目名
+    reqs.append({"addProtectedRange": {"protectedRange": {
+        "range": {"sheetId": sid},
+        "description": "自動反映セルと判定・見出しの保護（目標欄・KDI欄・自由記入欄は入力できます）",
+        "warningOnly": False,
+        "requestingUserCanEdit": True,
+        "unprotectedRanges": unprot,
+        "editors": {"users": PROTECT_EDITORS, "domainUsersCanEdit": False},
+    }}})
+
     sh.batch_update({"requests": reqs})
     print(f"  ✅ 書式を適用（リクエスト {len(reqs)}件）")
+    print(f"  🔒 シートを保護（手入力OKの範囲 {len(unprot)}件を解放）")
     print(f"\n🎀 完了！ https://docs.google.com/spreadsheets/d/{SSID}/edit#gid={sid}")
 
 
