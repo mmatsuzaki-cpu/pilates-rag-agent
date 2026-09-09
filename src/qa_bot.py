@@ -93,6 +93,22 @@ def normalize_app_text(text):
     return "\n".join(out)
 
 
+def is_cancel_report(text):
+    """結果がキャンセルの報告か。キャンセルは施術していないので
+    フィードバックは返さない(2026-09-09 松崎指示)。
+
+    「結果」の行だけを見る。提案内容に「無料キャンセルOK」などと
+    書かれていても反応しないようにするため。
+    """
+    t = normalize_app_text(text) if is_app_report(text) else (text or "")
+    # 「結果」の値だけを見る（このリポジトリには extract_section が無いので自前で拾う）。
+    # スタッフの手書きは「❶店舗：… ❺結果：キャンセル ❻悩み：…」と1行に並ぶことがあるので、
+    # 次の項目マーカー(❶〜❿ / ①〜⑩ / 改行)までを値として切り出す
+    clean = re.sub(r"[*_`]|:[a-z_]+:|━+", "", t)
+    m = re.search(r"結果\s*[:：]?\s*([^\n❶-❿①-⑩]*)", clean)
+    return "キャンセル" in m.group(1) if m else False
+
+
 def is_reflection(text):
     if is_app_report(text): return True
     if len(text) < 100: return False
@@ -395,7 +411,12 @@ def main():
             continue
         if ts in replied: continue
         if mention_pat in text: questions.append(m)
-        elif is_reflection(text): reflections.append(m)
+        elif is_reflection(text):
+            # キャンセルはフィードバック不要(2026-09-09 松崎指示)
+            if is_cancel_report(text):
+                print("  － キャンセルの報告なのでフィードバックしません")
+                continue
+            reflections.append(m)
     print(f"❓ メンション質問: {len(questions)}  📝 振り返り検知: {len(reflections)}")
 
     if not questions and not reflections:
