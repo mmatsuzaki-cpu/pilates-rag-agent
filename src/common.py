@@ -29,6 +29,9 @@ STORES = [
     # 所沢店: 2026-08 オープン(2026-07-29 追加)。マシン3台/スタッフ4名(2026-07-29確定)。target は暫定・要確認
     {"id": "S006", "name": "所沢店",     "machines": 3, "staff": 4,
      "sales_target": 3_000_000, "profit_target": 1_000_000},
+    # 浦和店: 2026-09 オープン(2026-09-10 追加)。machines/staff/target は暫定・要確認
+    {"id": "S007", "name": "浦和店",     "machines": 3, "staff": 4,
+     "sales_target": 3_000_000, "profit_target": 1_000_000},
 ]
 
 

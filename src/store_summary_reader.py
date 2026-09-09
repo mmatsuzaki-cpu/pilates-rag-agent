@@ -48,6 +48,8 @@ STORE_SUMMARIES = [
      "name_in_referral": "西宮北口"},
     {"id": "S006", "name": "所沢",     "ssid": "1K1FM8Y21ctEu8hXJNCCFsAoROE_SKv2clxunSF85yXs",
      "name_in_referral": "所沢"},   # 2026-08 オープン(2026-07-29 追加)
+    {"id": "S007", "name": "浦和",     "ssid": "1hLhPdkwATBHkiVpzdtKLiGwY8TSJ_NnSRZIY3hJ0YEQ",
+     "name_in_referral": "浦和"},   # 2026-09 オープン(2026-09-10 追加)
 ]
 
 # 現役会員から除外するコースキーワード(2026-05-04 松崎さん確定)

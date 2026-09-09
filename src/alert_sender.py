@@ -40,7 +40,7 @@ from store_summary_reader import get_all_stores_summary
 # 「ラピラティス実績全部」スプシ(口コミシートあり)
 DASHBOARD_SSID = "1K0_PP4mGQBHzzKYOo2E8bulcwSJJVShS8JK875bdoZA"
 
-STORE_ORDER = ["S001", "S002", "S003", "S004", "S005", "S006"]
+STORE_ORDER = ["S001", "S002", "S003", "S004", "S005", "S006", "S007"]
 
 
 def safe_int(v):
@@ -72,7 +72,8 @@ def get_reviews_from_kuchikomi(gc):
     # (2026-09-01: 所沢を各ブロックの下へ移した際、旧ハードコードがズレて
     #  他店舗の口コミ件数を読んでいた事故があったため)
     store_name = {"S001": "川越", "S002": "大宮", "S003": "高崎",
-                  "S004": "神戸元町", "S005": "西宮北口", "S006": "所沢"}
+                  "S004": "神戸元町", "S005": "西宮北口", "S006": "所沢",
+                  "S007": "浦和"}
     google_rows, hpb_rows = {}, {}
     group = None
     for i, row in enumerate(v):
@@ -106,12 +107,13 @@ def get_reviews_from_kuchikomi(gc):
 
     result = {}
     for sid in STORE_ORDER:
-        # 口コミシートに未登録の店(例: 所沢=新店)は 0 で返す
-        if sid not in google_rows:
-            result[sid] = {'google': 0, 'hpb': 0}
-            continue
-        g_row = v[google_rows[sid]] if google_rows[sid] < len(v) else []
-        h_row = v[hpb_rows[sid]]    if hpb_rows[sid]    < len(v) else []
+        # 口コミシートに未登録の店(例: 浦和=新店)は 0 で返す。
+        # Google行だけ追加されHPB行が未作成のケースでも落ちないよう、
+        # それぞれ独立に有無を判定する。
+        gi = google_rows.get(sid)
+        hi = hpb_rows.get(sid)
+        g_row = v[gi] if gi is not None and gi < len(v) else []
+        h_row = v[hi] if hi is not None and hi < len(v) else []
         result[sid] = {'google': latest_value(g_row), 'hpb': latest_value(h_row)}
     return result
 

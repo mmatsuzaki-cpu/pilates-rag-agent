@@ -27,10 +27,12 @@ from store_summary_reader import STORE_SUMMARIES, safe_int
 from alert_sender import resolve_report_channel, _now_jst
 
 NAME6 = {"S001": "川越", "S002": "大宮", "S003": "高崎",
-         "S004": "神戸元町", "S005": "西宮北口", "S006": "所沢"}
-ORDER = ["S001", "S002", "S003", "S004", "S005", "S006"]
+         "S004": "神戸元町", "S005": "西宮北口", "S006": "所沢",
+         "S007": "浦和"}
+ORDER = ["S001", "S002", "S003", "S004", "S005", "S006", "S007"]
 LINE_COLORS = {"S001": "#C9962F", "S002": "#3C6B4A", "S003": "#C25B4A",
-               "S004": "#4A6FA5", "S005": "#9C6BA0", "S006": "#B0742F"}
+               "S004": "#4A6FA5", "S005": "#9C6BA0", "S006": "#B0742F",
+               "S007": "#2F8F8F"}
 
 
 # ━━━━━━━━━━━━━━━━━ データ取得 ━━━━━━━━━━━━━━━━━
