@@ -1,7 +1,7 @@
-"""contract_rate_alert.py — 契約率40%以下スタッフの研修アラート(ピラティス版)
+"""contract_rate_alert.py — 契約率50%未満スタッフの研修アラート(ピラティス版)
 
 harinature-jisseki/contract_rate_alert.py のピラティス版(2026-09-13 松崎指示)。
-当月累計で「新規5件以上 かつ 契約率(=契約数/新規数)40%以下」のスタッフを抽出し、
+当月累計で「新規5件以上 かつ 契約率(=契約数/新規数)50%未満」のスタッフを抽出し、
 Slack #koshikiピラティス幹部(C0BQ7SYU3M1・【KOSHIKI】社内WS)へ通知する。
 該当者がいない日は投稿しない。
 
@@ -33,7 +33,7 @@ CHANNEL_LABEL = "#koshikiピラティス幹部"
 USERNAME = "契約率アラート"
 ICON = ":rotating_light:"
 
-THRESHOLD_PCT = 40  # 契約率40%以下が対象(2026-09-13 松崎指示。ハリナチュレは30%未満)
+THRESHOLD_PCT = 50  # 契約率50%未満が対象(2026-09-13 松崎指示で40%以下→50%未満。ハリナチュレは30%未満)
 MIN_NEW = 5        # 当月新規5件以上
 
 LOG_DIR = PROJECT_ROOT / "output" / "logs"
@@ -86,8 +86,8 @@ def flagged_staff(agg: dict) -> list:
     flagged = []
     for (store, staff), v in agg.items():
         n, k = v["new"], v["contract"]
-        # 整数で判定: 6/15=40% のようなちょうど境界が浮動小数の誤差で漏れないように
-        if n >= MIN_NEW and k * 100 <= THRESHOLD_PCT * n:
+        # 整数で判定: 5/10=50% のようなちょうど境界が浮動小数の誤差でぶれないように(50%ちょうどは対象外)
+        if n >= MIN_NEW and k * 100 < THRESHOLD_PCT * n:
             flagged.append({"store": store, "staff": staff, "new": n,
                             "contract": k, "rate": k / n, "pct": k * 100 // n})
     return flagged
@@ -95,7 +95,7 @@ def flagged_staff(agg: dict) -> list:
 
 def build_message(month: int, flagged: list) -> str:
     today = now_jst().strftime("%-m月%-d日")
-    L = [f":rotating_light: *契約率{THRESHOLD_PCT}%以下アラート*（当月累計・新規{MIN_NEW}件以上）",
+    L = [f":rotating_light: *契約率{THRESHOLD_PCT}%未満アラート*（当月累計・新規{MIN_NEW}件以上）",
          f"{month}月度　{today}時点", "", f"該当 *{len(flagged)}名*", ""]
     # 店舗ごとにまとめる。店舗は最も低い契約率順、店舗内も契約率の低い順
     by_store = defaultdict(list)
@@ -108,11 +108,11 @@ def build_message(month: int, flagged: list) -> str:
         if idx > 0:
             L.append("")
         L.append(f"*{st}*")
-        # 切り捨て表示(整数計算): 40.5%が四捨五入で「41%」等にぶれないようにする
+        # 切り捨て表示(整数計算): 49.5%が四捨五入で「50%」になり“50%未満”と矛盾するのを防ぐ
         for i in sorted(by_store[st], key=lambda x: (x["rate"], -x["new"])):
             L.append(f"・{i['staff']} *{i['pct']}%*（{i['contract']}/{i['new']}）")
     L.append("")
-    L.append(f"_※ 新規{MIN_NEW}件以上・契約率{THRESHOLD_PCT}%以下のスタッフを自動抽出（契約数/新規数）。研修フォローの目安です_")
+    L.append(f"_※ 新規{MIN_NEW}件以上・契約率{THRESHOLD_PCT}%未満のスタッフを自動抽出（契約数/新規数）。研修フォローの目安です_")
     L.append("")
     L.append("━━━━━━━━━━━━━━")
     L.append(":fire: *対応アクション*")
@@ -125,7 +125,7 @@ def build_message(month: int, flagged: list) -> str:
     L.append(":dart: *研修担当の目標KPI*")
     L.append("・契約率：*60%以上*")
     L.append("・解約率：*3%未満*")   # ピラティスは3%未満(2026-09-13 松崎指示。ハリナチュレは10%未満)
-    L.append("_この2つの達成が研修担当の役割・仕事です_")
+    L.append("_この2つの達成が研修担当、プロデューサーの役割、仕事です_")
     return "\n".join(L)
 
 
@@ -189,7 +189,7 @@ def main() -> int:
 
     agg = collect_staff(get_gspread_client(), year, month)
     flagged = flagged_staff(agg)
-    print(f"▶️ {ym} 契約率{THRESHOLD_PCT}%以下(新規{MIN_NEW}+): {len(flagged)}名 "
+    print(f"▶️ {ym} 契約率{THRESHOLD_PCT}%未満(新規{MIN_NEW}+): {len(flagged)}名 "
           f"／ 集計スタッフ {len(agg)}名")
     if not flagged:
         print("  該当者なし → 投稿スキップ")   # マーカーは立てない(その日はまだ投稿されうる)
