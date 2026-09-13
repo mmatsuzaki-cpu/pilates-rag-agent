@@ -122,7 +122,7 @@ def build_message(month: int, flagged: list) -> str:
     L.append("・*店長とも連携* して進める")
     L.append("")
     L.append("━━━━━━━━━━━━━━")
-    L.append(":dart: *研修担当の目標KPI*")
+    L.append(":dart: *目標KPI*")
     L.append("・契約率：*60%以上*")
     L.append("・解約率：*3%未満*")   # ピラティスは3%未満(2026-09-13 松崎指示。ハリナチュレは10%未満)
     L.append("_この2つの達成が研修担当、プロデューサーの役割、仕事です_")
