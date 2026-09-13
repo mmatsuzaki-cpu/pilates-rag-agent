@@ -9,6 +9,7 @@ config/.env
 data/*.json
 data/daily_snapshots/
 output/logs/*.log
+output/logs/*.done
 
 # Python
 __pycache__/
