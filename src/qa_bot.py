@@ -377,7 +377,62 @@ def fetch_user_name(user_id, cache=None):
     return name
 
 
+def _lock_single_run():
+    """qa_bot を同時に1つだけ動かすためのロック。取れなければ None。
+    5分おきの起動がMacのスリープ中に途中で止まり、復帰時にいっせいに動き出すと
+    全員が「まだ返信していない」と判断して同じ報告に何度もFBを返してしまう
+    (2026-09-13 ピラティスで6重投稿)。ロックはプロセスが終わると自動で外れる。"""
+    import fcntl
+    lock_path = PROJECT_ROOT / "data" / "qa_bot.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fh = open(lock_path, "w")
+    try:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        fh.close()
+        return None
+    return fh
+
+
+def _already_replied(channel, ts, auth):
+    """投稿直前の最終確認: このスレッドに自分(qa_bot)の返信がもう付いていないか。
+    報告アプリの投稿も同じBotのことがあるが、表示名(username)が「店舗 スタッフ」
+    なので、表示名が qa_bot と同じものだけを自分の返信とみなす。
+    確認できなかったときは False(従来どおり state の記録で判定する)。"""
+    data = slack_get("conversations.replies", {"channel": channel, "ts": ts, "limit": 100})
+    if not data.get("ok"):
+        return False
+    my_user, my_bot = auth.get("user_id"), auth.get("bot_id")
+    my_name = os.environ.get("SLACK_BOT_USERNAME") or None
+    for m in data.get("messages", [])[1:]:
+        if not (m.get("user") == my_user or (my_bot and m.get("bot_id") == my_bot)):
+            continue
+        if (m.get("username") or None) == my_name:
+            return True
+    return False
+
+
+def _save_state(state_path, state, replied):
+    """返信のたびに記録を保存する(途中で止まっても、返信済みを忘れないように)"""
+    state["replied_ts"] = list(replied)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def main():
+    lock = _lock_single_run()
+    if lock is None:
+        print("⏭ 別の qa_bot が実行中のためスキップ(二重返信防止)")
+        return 0
+    # 15分を超えたら自分で終わる(固まったままロックを持ち続けないように)。
+    # 返信済みは1件ごとに保存しているので、残りは次の回が引き継ぐ
+    import signal
+
+    def _too_long(signum, frame):
+        print("⏱ 15分を超えたので終了します(残りは次の回に引き継ぎ)", flush=True)
+        os._exit(1)
+    signal.signal(signal.SIGALRM, _too_long)
+    signal.alarm(15 * 60)
     channel = os.environ["SLACK_FEEDBACK_CHANNEL_ID"]
     knowledge_db = os.environ["NOTION_KNOWLEDGE_DB_ID"]
 
@@ -433,9 +488,14 @@ def main():
         else:
             hits = search(knowledge_db, kw, 3)
             reply = build_mention_reply(kw, hits)
+        if _already_replied(channel, ts, auth):
+            print(f"  ⏭ すでにFB返信済みのためスキップ: ts={ts}")
+            replied.add(ts); _save_state(state_path, state, replied)
+            continue
         res = slack_post_message(channel, reply, thread_ts=ts)
         if res.get("ok"):
             replied.add(ts); success += 1
+            _save_state(state_path, state, replied)
             print(f"  ✅ 質問返信: {kw}")
         time.sleep(1)
 
@@ -508,9 +568,14 @@ def main():
             # フォールバック: 旧フォーマット
             msg = build_auto_reply(kw, hits) if kw else "⚠️ FB生成失敗(キーワード取得不可)"
 
+        if _already_replied(channel, ts, auth):
+            print(f"  ⏭ すでにFB返信済みのためスキップ: ts={ts}")
+            replied.add(ts); _save_state(state_path, state, replied)
+            continue
         res = slack_post_message(channel, msg, thread_ts=ts)
         if res.get("ok"):
             replied.add(ts); success += 1
+            _save_state(state_path, state, replied)
             print(f"  ✅ 振り返り検知: {staff_name} (hits={len(hits)})")
         else:
             print(f"  ❌ 投稿失敗: ts={ts} {res.get('error')}")
