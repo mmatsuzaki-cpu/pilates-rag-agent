@@ -20,3 +20,6 @@ __pycache__/
 
 # Streamlit local secrets (ブラウザテスト用・コミット厳禁)
 .streamlit/secrets.toml
+
+# qa_bot の同時実行ロック(実行中だけ使う)
+data/qa_bot.lock
