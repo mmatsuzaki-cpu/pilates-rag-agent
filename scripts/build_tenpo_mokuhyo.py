@@ -27,12 +27,15 @@ HEAD = 3
 BLOCK = 14
 MONTHS = [(2026, 9), (2026, 10), (2026, 11), (2026, 12), (2027, 1)]
 
+# ％の項目は値を「％ポイント」(60 = 60%)で持つ。スタッフが 60 と入れるだけで 60.0% と表示される
+PCT_FMT = '0.0"%"'
+
 # 項目定義: (ラベル, 種別, 数値書式, 低いほど良いか)
 ITEMS = [
     ("売上（万円）",         "uriage",    '#,##0"万"', False),
     ("消化売上（万円）",     None,        '#,##0"万"', False),
-    ("契約率",               "keiyaku",   "0.0%",      False),
-    ("解約率",               "kaiyaku_r", "0.0%",      True),
+    ("契約率",               "keiyaku",   PCT_FMT,     False),
+    ("解約率",               "kaiyaku_r", PCT_FMT,     True),
     ("解約数",               "kaiyaku_n", "#,##0",     True),
     ("会員数（月末）",       "kaiin",     "#,##0",     False),
     ("口コミ獲得数",         None,        "#,##0",     False),
@@ -130,6 +133,8 @@ def snapshot_manual(ws):
     if not cols:
         return {}, {}
     known = {norm_label(l) for l, _, _, _ in ITEMS} | {"今月やる行動", "振り返り"}
+    # 契約率の結果セルの数式に *100 が無ければ旧方式（％項目を割合 0.65 で保持）
+    old_ratio = not any("契約率!" in str(c) and "*100" in str(c) for row in v for c in row)
     out, free_labels, cur = {}, {}, None
     for i in range(3, len(v)):
         a = str(v[i][0]).strip()
@@ -155,8 +160,10 @@ def snapshot_manual(ws):
                 c = v[i][g + off]
                 if lab in PCT_LABELS and isinstance(c, str):
                     m = re.fullmatch(r"\s*([0-9]+(?:\.[0-9]+)?)\s*[%％]\s*", c)
-                    if m:      # 「3％」(全角)は文字列扱いになるので割合の数値に直す
-                        c = float(m.group(1)) / 100
+                    if m:      # 「3％」(全角)は文字列扱いになるので％ポイントの数値に直す
+                        c = float(m.group(1))
+                elif lab in PCT_LABELS and old_ratio and isinstance(c, (int, float)) and c <= 1:
+                    c = round(c * 100, 4)   # 旧方式の割合 0.65 → 65
                 if str(c).strip() and not str(c).startswith("="):
                     out[(cur, lab, name, kind)] = c
     return out, free_labels
@@ -171,12 +178,13 @@ def f_uriage(col, mr):
 def f_keiyaku(col, mr):
     return ('=IFERROR(LET(r,IFERROR(MATCH($A{m},契約率!$A:$A,0),'
             'MATCH(TEXT($A{m},"yyyy年m月"),契約率!$A:$A,0)),'
-            'v,INDEX(契約率!${c}:${c},r),IF(v="","",v)),"")').format(m=mr, c=col)
+            'v,INDEX(契約率!${c}:${c},r),IF(v="","",v*100)),"")').format(m=mr, c=col)
 
 
-def f_kaiyaku(col, mr):
+def f_kaiyaku(col, mr, scale=1):
+    mul = "" if scale == 1 else f"*{scale}"
     return ('=IFERROR(LET(r,MATCH($A{m},解約率!$A:$A,0),'
-            'v,INDEX(解約率!${c}:${c},r),IF(v="","",v)),"")').format(m=mr, c=col)
+            'v,INDEX(解約率!${c}:${c},r),IF(v="","",v{s})),"")').format(m=mr, c=col, s=mul)
 
 
 def f_judge(gc_, rc_, row, lower):
@@ -306,7 +314,8 @@ def build():
                     elif kind == "keiyaku":
                         values[r0][gcol + 1] = f_keiyaku(ref["keiyaku"], mr)
                     else:
-                        values[r0][gcol + 1] = f_kaiyaku(ref[kind], mr)
+                        values[r0][gcol + 1] = f_kaiyaku(
+                            ref[kind], mr, 100 if kind == "kaiyaku_r" else 1)
                 if label != "その他（自由記入）":
                     values[r0][gcol + 2] = f_judge(g, v, r, lower)
                 # 9月の既存目標を転記
@@ -431,7 +440,7 @@ def build():
                          "userEnteredFormat.backgroundColor")
                 if numfmt:
                     cell(r0, r0 + 1, gcol, gcol + 2,
-                         {"numberFormat": {"type": "NUMBER" if "%" not in numfmt else "PERCENT",
+                         {"numberFormat": {"type": "NUMBER",
                                            "pattern": numfmt}},
                          "userEnteredFormat.numberFormat")
         # 判定列
@@ -498,6 +507,10 @@ def build():
                              "values": [{"userEnteredValue": "0"}]},
                "inputMessage": "数字だけを入力してください（％や「万」の文字は不要）",
                "strict": True}
+    dv_pct = {"condition": {"type": "NUMBER_BETWEEN",
+                            "values": [{"userEnteredValue": "0"}, {"userEnteredValue": "100"}]},
+              "inputMessage": "％の数字だけを入力してください（例：60％なら 60）",
+              "strict": True}
     for bi, _ in enumerate(MONTHS):
         mr0 = HEAD + bi * BLOCK
         for name, gcol, ref in STORES:
@@ -509,32 +522,36 @@ def build():
                 dv.append(rng(mr0 + 2, mr0 + 10, gcol + 1, gcol + 2))
             for r_ in dv:
                 reqs.append({"setDataValidation": {"range": r_, "rule": dv_rule}})
+            # 契約率・解約率の行（目標列＋浦和の結果列）は 0〜100 に絞る
+            pct_cols = [gcol] if ref else [gcol, gcol + 1]
+            for c_ in pct_cols:
+                reqs.append({"setDataValidation": {
+                    "range": rng(mr0 + 4, mr0 + 6, c_, c_ + 1), "rule": dv_pct}})
 
-    # 保護: シート全体をロックし、手で入力してよいセルだけ解放する
-    unprot = []
+    # 保護: シート（タブ）全体にはかけず、数式が入っているセルだけを範囲保護する
+    #   ・自動反映の結果セル（売上 / 契約率〜会員数）
+    #   ・判定列（KPI 8項目ぶん。「その他」行は数式なし）
+    #   マージセル（見出し帯・KDI/振り返り）にはかからない範囲だけを指定する
+    prot = []
     for bi, _ in enumerate(MONTHS):
         mr0 = HEAD + bi * BLOCK
         for name, gcol, ref in STORES:
-            # 目標列（KPI9項目＋KDI見出し以下の行動・振り返りのマージ左上）
-            unprot.append(rng(mr0 + 2, mr0 + 14, gcol, gcol + 1))
+            prot.append((rng(mr0 + 2, mr0 + 10, gcol + 2, gcol + 3), f"{name} 判定"))
             if ref:
-                unprot.append(rng(mr0 + 3, mr0 + 4, gcol + 1, gcol + 2))    # 消化売上
-                unprot.append(rng(mr0 + 8, mr0 + 11, gcol + 1, gcol + 2))   # 口コミ〜その他
-            else:
-                unprot.append(rng(mr0 + 2, mr0 + 11, gcol + 1, gcol + 2))   # 浦和は結果も手入力
-        unprot.append(rng(mr0 + 10, mr0 + 11, 0, 1))   # 「その他」行の項目名
-    reqs.append({"addProtectedRange": {"protectedRange": {
-        "range": {"sheetId": sid},
-        "description": "自動反映セルと判定・見出しの保護（目標欄・KDI欄・自由記入欄は入力できます）",
-        "warningOnly": False,
-        "requestingUserCanEdit": True,
-        "unprotectedRanges": unprot,
-        "editors": {"users": PROTECT_EDITORS, "domainUsersCanEdit": False},
-    }}})
+                prot.append((rng(mr0 + 2, mr0 + 3, gcol + 1, gcol + 2), f"{name} 売上(自動)"))
+                prot.append((rng(mr0 + 4, mr0 + 8, gcol + 1, gcol + 2), f"{name} 契約率〜会員数(自動)"))
+    for r_, label in prot:
+        reqs.append({"addProtectedRange": {"protectedRange": {
+            "range": r_,
+            "description": f"数式セルの保護｜{label}",
+            "warningOnly": False,
+            "requestingUserCanEdit": True,
+            "editors": {"users": PROTECT_EDITORS, "domainUsersCanEdit": False},
+        }}})
 
     sh.batch_update({"requests": reqs})
     print(f"  ✅ 書式を適用（リクエスト {len(reqs)}件）")
-    print(f"  🔒 シートを保護（手入力OKの範囲 {len(unprot)}件を解放）")
+    print(f"  🔒 数式セルを範囲保護（{len(prot)}件・タブ全体の保護はなし）")
     print(f"\n🎀 完了！ https://docs.google.com/spreadsheets/d/{SSID}/edit#gid={sid}")
 
 
