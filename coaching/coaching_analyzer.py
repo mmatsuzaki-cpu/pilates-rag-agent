@@ -170,6 +170,28 @@ def _strip_loops(text: str) -> str:
     return "".join(cleaned)
 
 
+class GeminiCreditError(RuntimeError):
+    """Gemini の前払いクレジット切れ。待っても直らないので、リトライせずにすぐ止める"""
+
+
+CREDIT_ERROR_MESSAGE = ("AIの利用残高（Gemini の前払いクレジット）が切れています。"
+                        "チャージされるまで録音の解析はできません")
+
+
+def _is_credit_depleted(err_str: str) -> bool:
+    s = err_str.lower()
+    return "prepayment" in s or "credits are depleted" in s
+
+
+def _upload_file(genai, path: str):
+    """Gemini へ音声をアップロードする。残高切れはアップロードの時点で返ってくるので、ここでも止める"""
+    try:
+        return genai.upload_file(path=path)
+    except Exception as e:
+        if _is_credit_depleted(str(e)):
+            raise GeminiCreditError(CREDIT_ERROR_MESSAGE) from e
+        raise
+
 def _gemini_call_with_retry(model, contents, generation_config=None, timeout=600, max_retries=5):
     """Gemini API呼び出し共通関数: 429リトライ対応"""
     last_error = None
@@ -183,6 +205,9 @@ def _gemini_call_with_retry(model, contents, generation_config=None, timeout=600
         except Exception as e:
             last_error = e
             err_str = str(e)
+            if _is_credit_depleted(err_str):
+                # 残高切れは何分待っても直らない(2026-09-19 名古屋店でスタッフが5分以上待たされた)
+                raise GeminiCreditError(CREDIT_ERROR_MESSAGE)
             if "429" in err_str or "quota" in err_str.lower() or "ResourceExhausted" in err_str:
                 if attempt >= max_retries:
                     raise RuntimeError(
@@ -301,7 +326,7 @@ def split_audio_to_chunks(audio_path: str, chunk_minutes: int = CHUNK_MINUTES) -
 def transcribe_single_chunk(chunk_path: str, chunk_index: int = 0) -> str:
     """単一チャンクを Gemini Audio で文字起こし(並列実行される)"""
     import google.generativeai as genai
-    uploaded = genai.upload_file(path=chunk_path)
+    uploaded = _upload_file(genai, chunk_path)
     for _ in range(60):
         if uploaded.state.name == "ACTIVE":
             break
@@ -361,6 +386,8 @@ def transcribe_audio_parallel(audio_path: str, progress_callback=None) -> dict:
                 idx = future_to_idx[future]
                 try:
                     transcripts[idx] = future.result()
+                except GeminiCreditError:
+                    raise
                 except Exception as e:
                     failed_first.append(idx)
                     print(f"[Round1] Chunk {idx} failed: {e}")
@@ -371,6 +398,8 @@ def transcribe_audio_parallel(audio_path: str, progress_callback=None) -> dict:
             try:
                 time.sleep(5)
                 transcripts[idx] = transcribe_single_chunk(chunks[idx], idx)
+            except GeminiCreditError:
+                raise
             except Exception as e:
                 failed_final.append(idx)
                 transcripts[idx] = f"\n[⚠ チャンク{idx+1}: 文字起こし失敗 ({str(e)[:100]})]\n"
@@ -552,7 +581,7 @@ def call_gemini_with_audio(audio_path: str, staff_name: str, session_date,
     genai.configure(api_key=GEMINI_API_KEY)
 
     # ── ① 音声ファイルを Gemini File API にアップロード ──
-    uploaded = genai.upload_file(path=audio_path)
+    uploaded = _upload_file(genai, audio_path)
     # ファイルが ACTIVE になるまで待機(通常 数秒)
     for _ in range(60):
         if uploaded.state.name == "ACTIVE":
