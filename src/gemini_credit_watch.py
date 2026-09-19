@@ -26,8 +26,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 from common import PROJECT_ROOT, load_env, slack_bot_token
 
 # 実績: 2026-06-06 に2,000円 → 2026-09-06 に残高マイナス。約3ヶ月＝月720円ペース。
-# 切れる少し前に知らせたいので、75日たったら予告する。
-PREDICT_DAYS = 75
+# 2026-09-10ごろから1日100〜170円に増え、9/6の2,000円は13日で切れた(9/19)。
+# 9/19に10,000円チャージ(1日130円なら約75日)。切れる前に知らせたいので55日で予告する。
+PREDICT_DAYS = 55
 STATE_PATH = Path(PROJECT_ROOT) / "data" / "gemini_credit.json"
 BILLING_URL = "https://aistudio.google.com/billing"
 
