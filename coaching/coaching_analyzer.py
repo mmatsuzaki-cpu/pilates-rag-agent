@@ -904,16 +904,21 @@ def _slack_readable(text: str) -> str:
     return "\n".join(_fix_bold_line(x) for x in out)
 
 
-def send_slack_notifications(staff_name: str, session_date, result: dict):
+def send_slack_notifications(staff_name: str, session_date, result: dict,
+                             token: str = "", channel: str = ""):
     """Slack に3種類の通知:
     ① 本人DM(スタッフ名から探す or 松崎さんDMにフォワード)
     ② #ピラティス_新規振り返り チャンネル投稿(全員見れる)
     ③ 松崎さん完了通知DM
     """
     import requests
-    if not SLACK_BOT_TOKEN:
+    # 投稿先は呼び出し側から受け取る。モジュール変数だけに頼ると、複数の解析が同時に
+    # 走ったときに互いの設定を上書きしてしまう(2026-09-20 ハリナチュレで発生)
+    token = token or SLACK_BOT_TOKEN
+    channel = channel or SLACK_FEEDBACK_CHANNEL_ID
+    if not token:
         return
-    H = {"Authorization": f"Bearer {SLACK_BOT_TOKEN}", "Content-Type": "application/json; charset=utf-8"}
+    H = {"Authorization": f"Bearer {token}", "Content-Type": "application/json; charset=utf-8"}
 
     scores = result.get("scores", {})
     avg = sum(scores.values()) / max(len(scores), 1)
@@ -960,7 +965,7 @@ def send_slack_notifications(staff_name: str, session_date, result: dict):
         f"{questions_block}"
     )
     requests.post("https://slack.com/api/chat.postMessage", headers=H,
-                  data=json.dumps({"channel": SLACK_FEEDBACK_CHANNEL_ID, "text": channel_msg}, ensure_ascii=False).encode("utf-8"))
+                  data=json.dumps({"channel": channel, "text": channel_msg}, ensure_ascii=False).encode("utf-8"))
 
     # ③ 松崎さん完了DM
     if SLACK_OWNER_USER_ID:
@@ -1090,7 +1095,8 @@ def save_to_notion(staff_name: str, session_date, result: dict) -> str:
 def analyze_session(audio_file, staff_name: str, session_date,
                     customer_info: dict = None,
                     contract: str = "なし", course: str = "—", store: str = "",
-                    questions: str = "") -> dict:
+                    questions: str = "",
+                    slack_token: str = "", slack_channel: str = "") -> dict:
     """Streamlit から呼ばれるメインエントリ
     audio_file: streamlit UploadedFile
     customer_info: お客様情報 dict (age / job / concerns / history)
@@ -1166,7 +1172,8 @@ def analyze_session(audio_file, staff_name: str, session_date,
         result["customer_info"] = customer_info or {}
 
         # 4. Slack通知
-        send_slack_notifications(staff_name, session_date, result)
+        send_slack_notifications(staff_name, session_date, result,
+                                 token=slack_token, channel=slack_channel)
 
         # 5. Notion 蓄積(失敗してもメインは止めない)
         notion_url = save_to_notion(staff_name, session_date, result)
