@@ -15,11 +15,28 @@ Slack #koshikiピラティス幹部(C0BQ7SYU3M1・【KOSHIKI】社内WS)へ通�
     python3 src/contract_rate_alert.py --auto       # スケジュール実行用(当日マーカーで1日1回)
 """
 import re
+import signal
+import socket
 import sys
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+# Google API は IPv6 経路だと応答が返らずハングすることがあるため IPv4 に固定する
+# (2026-09-20 高崎の取得後に4時間45分ハングし、当日分が未配信になった)
+_orig_gai = socket.getaddrinfo
+socket.getaddrinfo = lambda h, *a, **k: [r for r in _orig_gai(h, *a, **k) if r[0] == socket.AF_INET]
+# タイムアウト未指定の通信が永久に待たないようにする
+socket.setdefaulttimeout(60)
+
+# 万一どこかで固まっても launchd の次回起動を塞がないよう、全体を15分で打ち切る
+HARD_TIMEOUT_SEC = 900
+
+
+def _on_timeout(signum, frame):
+    raise TimeoutError(f"全体タイムアウト({HARD_TIMEOUT_SEC}秒)。処理を打ち切りました")
+
 
 import requests
 
@@ -203,4 +220,13 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    signal.signal(signal.SIGALRM, _on_timeout)
+    signal.alarm(HARD_TIMEOUT_SEC)
+    try:
+        rc = main()
+    except TimeoutError as e:
+        print(f"⏱️ {e}")
+        rc = 1
+    finally:
+        signal.alarm(0)
+    sys.exit(rc)
