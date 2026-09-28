@@ -6,7 +6,6 @@ Slack #koshikiピラティス幹部(C0BQ7SYU3M1・【KOSHIKI】社内WS)へ通�
 該当者がいない日は投稿しない。
 
 データ: 各店舗集計表の当月 R{令和}.{月}LTV シートのスタッフ別ブロック
-       複数店舗で勤務している人は全店舗の合計で判定する(2026-09-28 松崎指示)
        (store_summary_reader と同じ読み方。LTV シートだけ読むので軽い)
 
 使い方:
@@ -35,14 +34,8 @@ socket.setdefaulttimeout(60)
 HARD_TIMEOUT_SEC = 900
 
 
-class HardTimeout(BaseException):
-    """全体タイムアウト。店舗ごとの except Exception に握りつぶされないよう BaseException 派生にする
-    (2026-09-28 ピラティス版で TimeoutError が店舗単位の except に吸われて打ち切りが効かず、
-     9時の実行が11時22分まで続いて11時の起動を塞いだ)"""
-
-
 def _on_timeout(signum, frame):
-    raise HardTimeout(f"全体タイムアウト({HARD_TIMEOUT_SEC}秒)。処理を打ち切りました")
+    raise TimeoutError(f"全体タイムアウト({HARD_TIMEOUT_SEC}秒)。処理を打ち切りました")
 
 
 import requests
@@ -59,11 +52,6 @@ ICON = ":rotating_light:"
 
 THRESHOLD_PCT = 50  # 契約率50%未満が対象(2026-09-13 松崎指示で40%以下→50%未満。ハリナチュレは30%未満)
 MIN_NEW = 5        # 当月新規5件以上
-
-# 同じ名前の別人がいる場合はここに入れると店舗ごとに分けて集計する(今は該当なし)
-SEPARATE_BY_STORE_NAMES: set = set()
-# ヘルプ枠の「浦和店 RIONA」「浦和店RIONA」のような店舗名つき表記を本人名にそろえる
-_STORE_PREFIX_RE = re.compile(r"^\S+?店\s*")
 
 LOG_DIR = PROJECT_ROOT / "output" / "logs"
 MARKER = "contract_alert_{d}.done"
@@ -112,36 +100,14 @@ def collect_staff(gc, year: int, month: int) -> dict:
 
 
 def flagged_staff(agg: dict) -> list:
-    # 同じ人の複数店舗ぶんを1人にまとめる(同名の別人は店舗ごとのまま)
-    people = defaultdict(list)
-    for (store, staff), v in agg.items():
-        name = _STORE_PREFIX_RE.sub("", staff).strip() or staff
-        key = (name, store) if name in SEPARATE_BY_STORE_NAMES else (name, None)
-        people[key].append((store, v["new"], v["contract"]))
-
     flagged = []
-    for (staff, _), parts in people.items():
-        # ヘルプ枠表記と本人名が同じ店舗に並ぶこともあるので店舗単位でまとめ直す
-        by_store = defaultdict(lambda: [0, 0])
-        for store, nv, kv in parts:
-            by_store[store][0] += nv
-            by_store[store][1] += kv
-        n = sum(x[0] for x in by_store.values())
-        k = sum(x[1] for x in by_store.values())
+    for (store, staff), v in agg.items():
+        n, k = v["new"], v["contract"]
         # 整数で判定: 5/10=50% のようなちょうど境界が浮動小数の誤差でぶれないように(50%ちょうどは対象外)
         if n >= MIN_NEW and k * 100 < THRESHOLD_PCT * n:
-            # 見出しに使う店舗は新規数の一番多い店舗
-            stores = sorted(by_store, key=lambda st: -by_store[st][0])
-            flagged.append({"store": stores[0], "stores": stores, "staff": staff, "new": n,
+            flagged.append({"store": store, "staff": staff, "new": n,
                             "contract": k, "rate": k / n, "pct": k * 100 // n})
     return flagged
-
-
-def stores_note(f: dict) -> str:
-    """複数店舗の合算なら「※所沢＋浦和の合計」を返す(1店舗なら空)"""
-    if len(f.get("stores", [])) < 2:
-        return ""
-    return "※" + "＋".join(f["stores"]) + "の合計"
 
 
 def build_message(month: int, flagged: list) -> str:
@@ -161,9 +127,9 @@ def build_message(month: int, flagged: list) -> str:
         L.append(f"*{st}*")
         # 切り捨て表示(整数計算): 49.5%が四捨五入で「50%」になり“50%未満”と矛盾するのを防ぐ
         for i in sorted(by_store[st], key=lambda x: (x["rate"], -x["new"])):
-            L.append(f"・{i['staff']} *{i['pct']}%*（{i['contract']}/{i['new']}）{stores_note(i)}")
+            L.append(f"・{i['staff']} *{i['pct']}%*（{i['contract']}/{i['new']}）")
     L.append("")
-    L.append(f"_※ 新規{MIN_NEW}件以上・契約率{THRESHOLD_PCT}%未満のスタッフを自動抽出（契約数/新規数）。研修フォローの目安です（複数店舗で勤務している人は全店舗の合計）_")
+    L.append(f"_※ 新規{MIN_NEW}件以上・契約率{THRESHOLD_PCT}%未満のスタッフを自動抽出（契約数/新規数）。研修フォローの目安です_")
     L.append("")
     L.append("━━━━━━━━━━━━━━")
     L.append(":fire: *対応アクション*")
@@ -258,7 +224,7 @@ if __name__ == "__main__":
     signal.alarm(HARD_TIMEOUT_SEC)
     try:
         rc = main()
-    except HardTimeout as e:
+    except TimeoutError as e:
         print(f"⏱️ {e}")
         rc = 1
     finally:
