@@ -17,6 +17,7 @@
     python3 src/trend_report.py --through 8   # 8月までに固定(テスト用)
     python3 src/trend_report.py --force       # 冪等性チェックを無視して再送
 """
+import re
 import sys
 from pathlib import Path
 from playwright.sync_api import sync_playwright
@@ -81,7 +82,11 @@ def gather(gc, year: int) -> dict:
                         nv = safe_int(val[hdr.index("新規数")]) if "新規数" in hdr else 0
                         kv = safe_int(val[hdr.index("契約数")]) if "契約数" in hdr else 0
                         if nv > 0:
-                            rec["staff"].setdefault(name, {})[m] = {"num": kv, "den": nv}
+                            # 「浦和店 RIONA」「浦和店RIONA」のような空白違いを同一人物にまとめる
+                            key = re.sub(r"\s+", "", name)
+                            cell = rec["staff"].setdefault(key, {}).setdefault(m, {"num": 0, "den": 0})
+                            cell["num"] += kv
+                            cell["den"] += nv
                     c += 8
         out[store["id"]] = rec
     return out
