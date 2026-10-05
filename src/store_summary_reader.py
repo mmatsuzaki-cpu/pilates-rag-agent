@@ -144,16 +144,24 @@ def get_store_summary(gc, store: dict, year: int, month: int) -> dict:
             result["contract_rate"] = safe_pct(r4[7]) if len(r4) > 7 else 0.0
             # スタッフ別ブロック (J列=index9, 8列刻み)
             c = 9
+            block_contracts = 0  # 全ブロック(プレースホルダ名含む)の契約数合計
             while c < len(r3):
                 name = r2[c].strip() if c < len(r2) else ""
-                if name and not name.startswith("スタッフ"):
-                    hdr = [r3[c+k].strip() if c+k < len(r3) else "" for k in range(8)]
-                    val = [r4[c+k].strip() if c+k < len(r4) else "" for k in range(8)]
-                    nv = safe_int(val[hdr.index("新規数")]) if "新規数" in hdr else 0
-                    kv = safe_int(val[hdr.index("契約数")]) if "契約数" in hdr else 0
-                    if nv > 0 or kv > 0:
-                        result["staff"].append({"name": name, "newcomers": nv, "contracts": kv})
+                hdr = [r3[c+k].strip() if c+k < len(r3) else "" for k in range(8)]
+                val = [r4[c+k].strip() if c+k < len(r4) else "" for k in range(8)]
+                nv = safe_int(val[hdr.index("新規数")]) if "新規数" in hdr else 0
+                kv = safe_int(val[hdr.index("契約数")]) if "契約数" in hdr else 0
+                block_contracts += kv
+                if name and not name.startswith("スタッフ") and (nv > 0 or kv > 0):
+                    result["staff"].append({"name": name, "newcomers": nv, "contracts": kv})
                 c += 8
+            # G4 の式が一部のスタッフ列しか足していない店舗がある(大宮: 9・10人目が漏れ 2026-10-05)。
+            # 新規数(D4)は全ブロック分なので、契約数も全ブロック合計に揃える
+            if block_contracts != result["contracts"]:
+                print(f"    ⚠️ G4契約数({result['contracts']})≠スタッフ別合計({block_contracts}) → スタッフ別合計を採用")
+                result["contracts"] = block_contracts
+                result["contract_rate"] = (block_contracts / result["newcomers"]
+                                           if result["newcomers"] else 0.0)
         except Exception as e:
             print(f"    ⚠️ LTV取得失敗: {e}")
 
