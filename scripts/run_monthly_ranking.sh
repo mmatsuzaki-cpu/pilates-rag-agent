@@ -1,5 +1,5 @@
 #!/bin/bash
-# 月間ランキング配信 (毎月1日 9:00 JST / 1-5日は未配信ならキャッチアップ)
+# 月間ランキング配信 (毎日9:00起動 / 1-7日・レッスンCSV取込後に配信)
 cd "$(dirname "$0")/.." || exit 1
 mkdir -p output/logs data/lessons
 LOG="output/logs/ranking_$(date +%Y-%m).log"

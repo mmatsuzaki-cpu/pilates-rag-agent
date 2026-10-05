@@ -234,7 +234,8 @@ def get_all_stores_summary(year: int = None, month: int = None) -> dict:
             time.sleep(15)
         print(f"  {store['name']}...")
         try:
-            data = get_store_summary(gc, store, target_year, target_month)
+            # 店舗単位でも429リトライ(open_by_key等が素のまま落ちて店舗が丸ごと欠ける事故対策 2026-10)
+            data = with_retry(get_store_summary, gc, store, target_year, target_month)
             result[store["id"]] = data
             print(f"    新規{data['newcomers']} 契約{data['contracts']} {data['contract_rate']*100:.0f}% "
                   f"解約{data['cancels']} 紹介{data['referrals']} 会員{data['members']}")

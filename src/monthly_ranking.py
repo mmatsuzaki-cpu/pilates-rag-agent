@@ -16,7 +16,7 @@
     python3 src/monthly_ranking.py --dry                # 送信せず内容表示
     python3 src/monthly_ranking.py --no-slack           # 画像生成のみ
     python3 src/monthly_ranking.py --lessons path.csv   # レッスンCSVを明示指定
-    python3 src/monthly_ranking.py --auto               # 1-5日のみ実行(未配信なら)
+    python3 src/monthly_ranking.py --auto               # 1-7日・未配信・レッスンCSV取込済みなら実行(7日はCSV無しでも)
 """
 
 import argparse
@@ -30,7 +30,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from common import PROJECT_ROOT, STORES
-from store_summary_reader import get_all_stores_summary
+from store_summary_reader import get_all_stores_summary, STORE_SUMMARIES
 from ranking_render import render_ranking_to_png
 
 JST = timezone(timedelta(hours=9))
@@ -64,9 +64,14 @@ def _find_lesson_csv(year: int, month: int, explicit: str = None) -> Path:
         return fixed
     dl = Path.home() / "Downloads"
     if dl.exists():
+        # 対象月の締め(翌月1日)より前に保存されたCSVは別の月のデータなので使わない
+        # (9/10の途中経過CSVを9月確定値として拾う事故防止 2026-10)
+        ny, nm = (year + 1, 1) if month == 12 else (year, month + 1)
+        month_end = datetime(ny, nm, 1, tzinfo=JST).timestamp()
         cands = list(dl.glob("ss-*.csv")) + [
             p for p in dl.glob("*.csv")
             if any(k in p.name for k in ("lesson", "レッスン", "予約", "reserv"))]
+        cands = [p for p in cands if p.stat().st_mtime >= month_end]
         if cands:
             return max(cands, key=lambda p: p.stat().st_mtime)
     return None
@@ -219,21 +224,34 @@ def load_lesson_ranking(year: int, month: int, explicit: str = None,
 
 
 # ── 契約率 (集計表LTV) ─────────────────────────────────────
+# 同じ名前の別人がいる場合はここに入れると店舗ごとに分けて集計する(今は該当なし)
+SEPARATE_BY_STORE_NAMES: set = set()
 def load_contract_ranking(year: int, month: int) -> tuple:
     """契約率ランキング [{name, store, value, num, den}] と 注記 を返す"""
     summary = get_all_stores_summary(year, month)
-    rows = []
+    # 複数店舗で働く人は1人にまとめる(例: MIYUU 所沢＋浦和。2026-10 松崎さん確認)
+    # 同名の別人がいたら SEPARATE_BY_STORE_NAMES に入れると店舗ごとのまま集計する
+    people = {}
     for sid, d in (summary or {}).items():
+        store = STORE_NAME.get(sid, sid)
         for m in d.get("staff", []):
-            den = m.get("newcomers", 0)
-            num = m.get("contracts", 0)
-            if den >= MIN_DEN:
-                rows.append({"name": m["name"], "store": STORE_NAME.get(sid, sid),
-                             "num": num, "den": den,
-                             "value": round(num / den * 100) if den else 0})
+            key = (m["name"], store) if m["name"] in SEPARATE_BY_STORE_NAMES else (m["name"], None)
+            p = people.setdefault(key, {"name": m["name"], "by_store": {}})
+            bs = p["by_store"].setdefault(store, [0, 0])
+            bs[0] += m.get("newcomers", 0)
+            bs[1] += m.get("contracts", 0)
+    rows = []
+    for p in people.values():
+        den = sum(v[0] for v in p["by_store"].values())
+        num = sum(v[1] for v in p["by_store"].values())
+        if den >= MIN_DEN:
+            stores = sorted(p["by_store"], key=lambda st: -p["by_store"][st][0])
+            rows.append({"name": p["name"], "store": "＋".join(stores),
+                         "num": num, "den": den,
+                         "value": round(num / den * 100) if den else 0})
     rows.sort(key=lambda x: (-x["value"], -x["den"]))
     note = f"※新規対応 {MIN_DEN}件以上のスタッフが対象"
-    return _take_with_ties(rows, TOP_N), note
+    return _take_with_ties(rows, TOP_N), note, len(summary or {})
 
 
 # ── 配信済みマーカー ────────────────────────────────────────
@@ -264,7 +282,10 @@ def main():
     ap.add_argument("--dry", action="store_true")
     ap.add_argument("--no-slack", action="store_true")
     ap.add_argument("--force", action="store_true")
-    ap.add_argument("--auto", action="store_true", help="1-5日のみ・未配信なら実行")
+    ap.add_argument("--resend", action="store_true", help="差し替え再配信(訂正の一文を添える)")
+    ap.add_argument("--note", help="--resend 時に添える一文(省略時は既定文)")
+    ap.add_argument("--silent", action="store_true", help="@channel を付けない")
+    ap.add_argument("--auto", action="store_true", help="1-7日のみ・未配信・レッスンCSV取込済みなら実行(7日はCSV無しでも配信)")
     args = ap.parse_args()
 
     now = datetime.now(JST)
@@ -275,15 +296,26 @@ def main():
     key = f"{year}-{month:02d}"
 
     if args.auto:
-        if now.day > 5:
-            print(f"⏭️ --auto: 本日{now.day}日は月初(1-5日)ではないためスキップ")
+        if now.day > 7:
+            print(f"⏭️ --auto: 本日{now.day}日は月初(1-7日)ではないためスキップ")
             return 0
         if key in _load_sent() and not args.force:
             print(f"⏭️ --auto: {key} は配信済み")
             return 0
 
+    # 月初はDriveからのレッスンCSV取込(data/lessons/YYYY-MM.csv)を待つ。
+    # 9月分はCSV未着のまま1日に配信され「レッスン数0件」になった(2026-10)。
+    # 7日は取込が無くてもあるデータで配信(取りこぼし防止)。
+    lesson_fixed = LESSON_DIR / f"{key}.csv"
+    if args.auto and not args.lessons and not lesson_fixed.exists() and now.day <= 6:
+        print(f"⏭️ --auto: レッスン数CSV({lesson_fixed.name})がまだ無いので待機(7日はCSV無しでも配信)")
+        return 0
+
     print(f"🏆 月間ランキング: {year}年{month}月")
-    contract, c_note = load_contract_ranking(year, month)
+    contract, c_note, n_ok = load_contract_ranking(year, month)
+    if args.auto and n_ok < len(STORE_SUMMARIES) and now.day <= 6:
+        print(f"⏭️ --auto: 集計表の読込が {n_ok}/{len(STORE_SUMMARIES)} 店舗のみ → 欠けたまま配信せず次回再試行")
+        return 1
     # 店舗名なしスタッフの補完用。CSVが無い月は余計なAPIを叩かない
     roster = load_staff_roster(year, month) if _find_lesson_csv(year, month, args.lessons) else {}
     lesson, l_note = load_lesson_ranking(year, month, args.lessons, roster)
@@ -325,6 +357,8 @@ def main():
     mention = "" if "--silent" in sys.argv else "<!channel>\n"
     head = (f"{mention}:trophy: *La pilates 月間ランキング* :trophy:\n"
             f"{year}年{month}月の確定値です(レッスン数 / 契約率)")
+    if args.resend:
+        head += "\n" + (args.note or "※先日の配信はレッスン数・一部店舗の契約率が反映されていなかったため、正しいデータで再配信します")
     ok = _slack_upload_png(ch, [out], head)
     if ok:
         _mark_sent(key)
