@@ -82,15 +82,29 @@ def collect_staff(gc, year: int, month: int) -> dict:
     for i, store in enumerate(STORE_SUMMARIES):
         if i > 0:
             time.sleep(2)   # 60 reads/分 のquota分散
-        try:
-            sh = with_retry(gc.open_by_key, store["ssid"])
-            ltv = find_sheet(sh, [ltv_sheet_name(year, month)])
-            if not ltv:
-                print(f"  · {store['name']}: {ltv_sheet_name(year, month)} なし → スキップ")
-                continue
-            rows = with_retry(ltv.get, "A2:CK4")
-        except Exception as e:
-            print(f"  ⚠️ {store['name']} 取得失敗: {str(e)[:100]}")
+        # find_sheet(シート一覧の読み込み)も429になるので店舗単位でリトライする
+        # (2026-10-08 所沢が429で抜けたまま投稿された)
+        rows, missing = None, False
+        for attempt in range(3):
+            try:
+                sh = with_retry(gc.open_by_key, store["ssid"])
+                ltv = find_sheet(sh, [ltv_sheet_name(year, month)])
+                if not ltv:
+                    missing = True
+                    break
+                rows = with_retry(ltv.get, "A2:CK4")
+                break
+            except Exception as e:
+                if "429" in str(e) and attempt < 2:
+                    print(f"    🔄 {store['name']} 429 quota → 65秒待機してリトライ ({attempt+1}/3)")
+                    time.sleep(65)
+                    continue
+                print(f"  ⚠️ {store['name']} 取得失敗: {str(e)[:100]}")
+                break
+        if missing:
+            print(f"  · {store['name']}: {ltv_sheet_name(year, month)} なし → スキップ")
+            continue
+        if rows is None:
             continue
         r2 = rows[0] if len(rows) > 0 else []
         r3 = rows[1] if len(rows) > 1 else []
