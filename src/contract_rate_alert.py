@@ -45,6 +45,24 @@ def _on_timeout(signum, frame):
     raise HardTimeout(f"全体タイムアウト({HARD_TIMEOUT_SEC}秒)。処理を打ち切りました")
 
 
+def _start_wallclock_watchdog():
+    """signal.alarm は Mac のスリープ中は進まないため、実時間でも見張る
+    (2026-10-10 9:11 のスリープ中の一瞬の起動で始まった実行が3時間残り、11時の起動を塞いだ)"""
+    import os
+    import threading
+    import time
+    started = time.time()
+
+    def _watch():
+        while True:
+            time.sleep(20)
+            if time.time() - started > HARD_TIMEOUT_SEC + 60:
+                print(f"⏱️ 実時間で{HARD_TIMEOUT_SEC + 60}秒を超えたため打ち切り(スリープ明けなど)", flush=True)
+                os._exit(1)
+
+    threading.Thread(target=_watch, daemon=True).start()
+
+
 import requests
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -268,6 +286,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    _start_wallclock_watchdog()
     signal.signal(signal.SIGALRM, _on_timeout)
     signal.alarm(HARD_TIMEOUT_SEC)
     try:
