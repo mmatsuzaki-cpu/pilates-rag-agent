@@ -2,7 +2,8 @@
 
 harinature-jisseki/contract_rate_alert.py のピラティス版(2026-09-13 松崎指示)。
 当月累計で「新規5件以上 かつ 契約率(=契約数/新規数)50%未満」のスタッフを抽出し、
-Slack #koshikiピラティス幹部(C0BQ7SYU3M1・【KOSHIKI】社内WS)へ通知する。
+Slack #koshikiピラティス幹部_契約率アラート(C0C983E2D2R・【KOSHIKI】社内WS)へ通知する。
+(2026-10-15 松崎指示で #koshikiピラティス幹部 C0BQ7SYU3M1 から同メンバーの専用chへ移動)
 該当者がいない日は投稿しない。
 
 データ: 各店舗集計表の当月 R{令和}.{月}LTV シートのスタッフ別ブロック
@@ -70,8 +71,8 @@ from common import PROJECT_ROOT, get_gspread_client, slack_bot_token
 from store_summary_reader import (STORE_SUMMARIES, find_sheet, ltv_sheet_name,
                                   safe_int, with_retry)
 
-CHANNEL = "C0BQ7SYU3M1"          # #koshikiピラティス幹部(【KOSHIKI】社内WS)
-CHANNEL_LABEL = "#koshikiピラティス幹部"
+CHANNEL = "C0C983E2D2R"          # #koshikiピラティス幹部_契約率アラート(【KOSHIKI】社内WS・非公開)
+CHANNEL_LABEL = "#koshikiピラティス幹部_契約率アラート"
 USERNAME = "契約率アラート"
 ICON = ":rotating_light:"
 
