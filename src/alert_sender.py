@@ -27,6 +27,7 @@
 import json
 import os
 import sys
+import time
 from datetime import datetime, date, timedelta
 from pathlib import Path
 
@@ -674,13 +675,19 @@ def main():
     print(f"📊 {report_type}レポート生成中 ({target_year}-{target_month:02d})...")
 
     # 先に口コミシート(軽量・1 read)を取得 → quota確保
+    # 起床直後のDNS未復帰などで落ちることがあるため最大3回リトライ。
+    # (2026-10-20: 失敗時に全店0件のまま配信されていた)
     reviews = {}
-    try:
-        gc = get_gspread_client()
-        reviews = get_reviews_from_kuchikomi(gc)
-        print("  ✅ 口コミシート 取得完了")
-    except Exception as e:
-        print(f"  ⚠️ 口コミ取得失敗: {e}")
+    for attempt in range(1, 4):
+        try:
+            gc = get_gspread_client()
+            reviews = get_reviews_from_kuchikomi(gc)
+            print("  ✅ 口コミシート 取得完了")
+            break
+        except Exception as e:
+            print(f"  ⚠️ 口コミ取得失敗({attempt}/3): {e}")
+            if attempt < 3:
+                time.sleep(30)
 
     # 集計表から取得(契約率/会員数/新規/解約/紹介)
     summary = get_all_stores_summary(target_year, target_month)
@@ -700,6 +707,12 @@ def main():
             print(f"  📈 前日比の基準: {prev_snap.get('date')} のスナップショット")
         else:
             print("  ℹ️ 前日スナップショットなし → 前日比は非表示(翌日以降に表示)")
+        # 口コミが取れなかった日は0件表示にせず、前日スナップショットの件数で埋める
+        if not reviews and prev_snap:
+            for sid in summary:
+                pv = prev_snap.get("stores", {}).get(sid, {})
+                summary[sid]['reviews'] = {'google': pv.get('google', 0), 'hpb': pv.get('hpb', 0)}
+            print(f"  ↩️ 口コミは前日({prev_snap.get('date')})の件数で代替")
         subtitle = f"新規実績　{ref.month}月の集計({ref.day}日時点)"
         staff_subtitle = f"スタッフ別契約率　{ref.month}月({ref.day}日時点)"
         as_of_label = f"{ref.month}/{ref.day} 時点"
