@@ -574,6 +574,15 @@ def _send_daily_dashboards(store_data: dict, staff_data: dict, channel_id: str,
     return ok
 
 
+def _daily_sent_marker(day=None) -> Path:
+    """Mac で daily を送れた日の印(2026-10-26追加)。
+    Mac の起動を 22:00/23:00/23:40 の3回にしたので、Slack の履歴確認が通信不調で失敗しても
+    二重送信しないよう、まず手元の印を見る。GitHub Actions では毎回消えるので従来どおり Slack 履歴で判定。"""
+    # day=何日分の配信か。送信完了が0時をまたいでも翌日分の印にならないよう、呼び出し側は配信の基準日を渡す
+    d = day or _now_jst()
+    return Path(__file__).resolve().parent.parent / "output" / "daily_sent" / d.strftime("%Y-%m-%d")
+
+
 def already_sent_today(channel_id: str) -> bool:
     """本日のbot自身投稿が実績進捗チャンネルにあるか確認(冪等性チェック)
     GitHub Actions cron 多重化対応。--force で強制再送可。
@@ -581,6 +590,8 @@ def already_sent_today(channel_id: str) -> bool:
     """
     if "--force" in sys.argv:
         return False
+    if _daily_sent_marker().exists():
+        return True
     if not channel_id:
         print("  ⚠️ チャンネルID未解決で冪等性チェックskip", flush=True)
         return False
@@ -597,10 +608,19 @@ def already_sent_today(channel_id: str) -> bool:
         today_start = datetime(now.year, now.month, now.day)
         # UTC/JST のズレを過去24h oldest で吸収
         oldest = min(today_start.timestamp(), now.timestamp() - 22 * 3600)
-        r = requests.get("https://slack.com/api/conversations.history",
-            headers={"Authorization": f"Bearer {bot_token}"},
-            params={"channel": channel_id, "limit": 50, "oldest": oldest}, timeout=15)
-        d = r.json()
+        import time
+        for i in range(3):
+            try:
+                r = requests.get("https://slack.com/api/conversations.history",
+                    headers={"Authorization": f"Bearer {bot_token}"},
+                    params={"channel": channel_id, "limit": 50, "oldest": oldest}, timeout=15)
+                d = r.json()
+                break
+            except Exception as e:
+                if i == 2:
+                    raise
+                print(f"  ⚠️ 冪等性チェック通信失敗({i + 1}/3): {e}", flush=True)
+                time.sleep(20)
         day_marker = f"({now.day}日時点)"     # 例: "(3日時点)"
         date_iso = now.strftime("%Y/%m/%d")
         for m in d.get("messages", []):
@@ -756,6 +776,13 @@ def main():
             return 1
 
         ok = _send_daily_dashboards(store_data, staff_data, report_channel, head, empty_note)
+        if ok and not as_of_override:
+            try:
+                mk = _daily_sent_marker(ref)
+                mk.parent.mkdir(parents=True, exist_ok=True)
+                mk.write_text(_now_jst().isoformat())
+            except Exception as e:
+                print(f"  ⚠️ 送信済みの印を作れませんでした: {e}")
         return 0 if ok else 1
 
     # ── mid/end: 従来通り webhook テキスト ───────────────────
