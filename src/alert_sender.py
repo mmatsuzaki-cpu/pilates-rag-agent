@@ -192,13 +192,20 @@ def build_message(data: dict, label: str) -> str:
 # ダッシュボード PNG 生成 + Slack 添付 (2026-06-04 追加)
 #   harinature-rag-agent/src/alert_sender.py からの移植
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# #ピラティス_実績_口コミ(旧 #ピラティス_実績進捗)。名前が変わってもIDは変わらない
+DEFAULT_REPORT_CHANNEL_ID = "C0AUV6GFX71"
+
+
 def resolve_report_channel() -> str:
     """実績進捗チャンネルIDを解決
     1) env SLACK_REPORT_CHANNEL_ID があればそれ
-    2) なければ conversations.list で名前から自動検出 (Botがメンバーのチャンネル)
+    2) なければ既知のID(DEFAULT_REPORT_CHANNEL_ID)
+    3) それも空なら conversations.list で名前から自動検出 (Botがメンバーのチャンネル)
+    ⚠️ 2026-10-19 にチャンネル名が「ピラティス_実績_口コミ」へ変わり、名前検出が外れて
+       GitHub(secret未登録)の daily が 10/19〜 全滅した → ID固定を優先する。
     """
     import requests
-    cid = os.environ.get("SLACK_REPORT_CHANNEL_ID", "").strip()
+    cid = os.environ.get("SLACK_REPORT_CHANNEL_ID", "").strip() or DEFAULT_REPORT_CHANNEL_ID
     if cid:
         return cid
     try:
@@ -208,7 +215,7 @@ def resolve_report_channel() -> str:
                   "limit": 1000, "exclude_archived": "true"}, timeout=30)
         for c in r.json().get("channels", []):
             n = c.get("name", "")
-            if "実績進捗" in n and "ピラティス" in n:
+            if "ピラティス" in n and ("実績進捗" in n or "実績_口コミ" in n):
                 print(f"  ℹ️ 実績進捗チャンネル自動検出: {c['id']} ({n})")
                 return c["id"]
     except Exception as e:
