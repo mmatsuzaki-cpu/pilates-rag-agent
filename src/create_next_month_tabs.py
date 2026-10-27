@@ -125,7 +125,7 @@ def build_updates_inq(values, month):
 
 
 def process_store(gc, store, ty, tm, dry, prefix):
-    sh = gc.open_by_key(store["ssid"])
+    sh = with_retry(gc.open_by_key, store["ssid"])
     meta = with_retry(sh.fetch_sheet_metadata, {
         "fields": "sheets(properties(sheetId,title,index),"
                   "protectedRanges(range,description,warningOnly,editors,unprotectedRanges))"})
@@ -152,15 +152,20 @@ def process_store(gc, store, ty, tm, dry, prefix):
             "sourceSheetId": sp["sheetId"], "insertSheetIndex": sp["index"],
             "newSheetName": new}}]})
         new_id = res["replies"][0]["duplicateSheet"]["properties"]["sheetId"]
-        ws = sh.get_worksheet_by_id(new_id)
-        values = with_retry(ws.get, value_render_option="FORMULA")
-        if kind == "LTV":
-            inq = created.get("問い合わせ数") or find_title(titles, prefix + tab_name(ty, tm, "問い合わせ数"))
-            ups = build_updates_ltv(values, inq or new.replace("LTV", "問い合わせ数"))
-        else:
-            ups = build_updates_inq(values, tm)
-        if ups:
-            with_retry(ws.batch_update, ups, value_input_option="USER_ENTERED")
+        try:
+            ws = with_retry(sh.get_worksheet_by_id, new_id)
+            values = with_retry(ws.get, value_render_option="FORMULA")
+            if kind == "LTV":
+                inq = created.get("問い合わせ数") or find_title(titles, prefix + tab_name(ty, tm, "問い合わせ数"))
+                ups = build_updates_ltv(values, inq or new.replace("LTV", "問い合わせ数"))
+            else:
+                ups = build_updates_inq(values, tm)
+            if ups:
+                with_retry(ws.batch_update, ups, value_input_option="USER_ENTERED")
+        except Exception:
+            # 前月のコピーのまま残ると次回「作成済み」でスキップされるので、作りかけは消して次回やり直す
+            with_retry(sh.batch_update, {"requests": [{"deleteSheet": {"sheetId": new_id}}]})
+            raise
         # 保護は書き込みの後に付ける（先に付けると編集者外のセルに書けないため）
         try:
             np_ = copy_protection(sh, sheets[src].get("protectedRanges", []), new_id)
@@ -194,6 +199,9 @@ def main():
         except Exception as e:
             errors += 1
             log(f"  ❌ {store['name']}: {e}")
+        # 7店舗連続だと読み取り上限(毎分)に当たるので店舗ごとに間を空ける
+        if not dry:
+            time.sleep(10)
     log(f"=== 完了（エラー{errors}店舗）")
     return 1 if errors else 0
 
