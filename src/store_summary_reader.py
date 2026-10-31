@@ -138,30 +138,21 @@ def get_store_summary(gc, store: dict, year: int, month: int) -> dict:
             r2 = rows[0] if len(rows) > 0 else []
             r3 = rows[1] if len(rows) > 1 else []
             r4 = rows[2] if len(rows) > 2 else []
-            # 店舗合計 (D4=新規数 / G4=契約数 / H4=契約率)
+            # 店舗合計はスプシの値をそのまま使う (D4=新規数 / G4=契約数 / H4=契約率)
             result["newcomers"]     = safe_int(r4[3]) if len(r4) > 3 else 0
             result["contracts"]     = safe_int(r4[6]) if len(r4) > 6 else 0
             result["contract_rate"] = safe_pct(r4[7]) if len(r4) > 7 else 0.0
             # スタッフ別ブロック (J列=index9, 8列刻み)
             c = 9
-            block_contracts = 0  # 全ブロック(プレースホルダ名含む)の契約数合計
             while c < len(r3):
                 name = r2[c].strip() if c < len(r2) else ""
                 hdr = [r3[c+k].strip() if c+k < len(r3) else "" for k in range(8)]
                 val = [r4[c+k].strip() if c+k < len(r4) else "" for k in range(8)]
                 nv = safe_int(val[hdr.index("新規数")]) if "新規数" in hdr else 0
                 kv = safe_int(val[hdr.index("契約数")]) if "契約数" in hdr else 0
-                block_contracts += kv
                 if name and not name.startswith("スタッフ") and (nv > 0 or kv > 0):
                     result["staff"].append({"name": name, "newcomers": nv, "contracts": kv})
                 c += 8
-            # G4 の式が一部のスタッフ列しか足していない店舗がある(大宮: 9・10人目が漏れ 2026-10-05)。
-            # 新規数(D4)は全ブロック分なので、契約数も全ブロック合計に揃える
-            if block_contracts != result["contracts"]:
-                print(f"    ⚠️ G4契約数({result['contracts']})≠スタッフ別合計({block_contracts}) → スタッフ別合計を採用")
-                result["contracts"] = block_contracts
-                result["contract_rate"] = (block_contracts / result["newcomers"]
-                                           if result["newcomers"] else 0.0)
         except Exception as e:
             print(f"    ⚠️ LTV取得失敗: {e}")
 

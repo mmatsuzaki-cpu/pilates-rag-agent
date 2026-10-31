@@ -239,6 +239,7 @@ HPB_URLS = {
     "S004": "https://beauty.hotpepper.jp/kr/slnH000740308/",
     "S005": "https://beauty.hotpepper.jp/kr/slnH000777989/",
     "S006": "https://beauty.hotpepper.jp/kr/slnH000820108/",   # 所沢(2026-08オープン)
+    "S007": "https://beauty.hotpepper.jp/kr/slnH000825200/",   # 浦和(2026-09オープン)
 }
 
 
@@ -303,7 +304,8 @@ def update_reviews(sh):
     # (2026-09-01: 所沢を各ブロックの下に移した際、旧ハードコード
     #  「Google=17/HPB=18」等がズレて他店舗の行を上書きする事故が発生したため)
     store_name = {"S001": "川越", "S002": "大宮", "S003": "高崎",
-                  "S004": "神戸元町", "S005": "西宮北口", "S006": "所沢"}
+                  "S004": "神戸元町", "S005": "西宮北口", "S006": "所沢",
+                  "S007": "浦和"}
     google_rows, hpb_rows, total_rows = {}, {}, {}
     group = None
     for i, row in enumerate(all_v[1:], start=2):
@@ -334,7 +336,7 @@ def update_reviews(sh):
         return s
 
     cl = _col_letter(col_idx)
-    for sid in ["S001", "S002", "S003", "S004", "S005", "S006"]:
+    for sid in store_name:
         if sid not in counts or sid not in google_rows or sid not in hpb_rows:
             continue
         g = counts[sid]["google"]

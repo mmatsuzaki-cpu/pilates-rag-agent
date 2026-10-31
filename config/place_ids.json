@@ -34,5 +34,11 @@
     "place_id": "ChIJpYJxElPdGGARBkE9Z9OqP8U",
     "count": 4,
     "rating": 0
+  },
+  "S007": {
+    "name": "浦和店",
+    "place_id": "ChIJ-X14pSXrGGARlAFfXlB-pZk",
+    "count": 67,
+    "rating": 4.9
   }
 }

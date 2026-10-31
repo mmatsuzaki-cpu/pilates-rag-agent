@@ -30,6 +30,7 @@ HPB_URLS = {
     "S004": "https://beauty.hotpepper.jp/kr/slnH000740308/",
     "S005": "https://beauty.hotpepper.jp/kr/slnH000777989/",
     "S006": "https://beauty.hotpepper.jp/kr/slnH000820108/",  # 所沢(2026-08〜)
+    "S007": "https://beauty.hotpepper.jp/kr/slnH000825200/",  # 浦和(2026-09〜)
 }
 
 
